@@ -1,0 +1,13 @@
+services:
+  cache.ocha_reliefweb_api:
+    class: Drupal\Core\Cache\CacheBackendInterface
+    tags:
+      - { name: cache.bin }
+    factory: cache_factory:get
+    arguments: [ocha_reliefweb_api]
+  ocha_reliefweb_api.client:
+    class: Drupal\ocha_reliefweb_api\Services\OchaReliefWebApiClient
+    arguments: ['@cache.ocha_reliefweb_api', '@config.factory', '@datetime.time', '@http_client', '@logger.factory']
+  ocha_reliefweb_api.converter:
+    class: Drupal\ocha_reliefweb_api\Services\OchaReliefWebApiConverter
+    arguments: ['@cache.ocha_reliefweb_api', '@config.factory', '@datetime.time', '@http_client', '@logger.factory']

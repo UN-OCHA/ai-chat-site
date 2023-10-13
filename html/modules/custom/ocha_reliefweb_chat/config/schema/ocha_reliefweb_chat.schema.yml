@@ -1,0 +1,34 @@
+ocha_reliefweb_chat.settings:
+  type: config_object
+  label: 'OCHA ReliefWeb Chat settings'
+  mapping:
+    elasticsearch_url:
+      type: string
+      label: 'Elasticsearch URL'
+    elasticsearch_indexing_batch_size:
+      type: integer
+      label: 'Elasticsearch indexing batch size (number of documents to index at once).'
+    openai_emdding_url:
+      type: string
+      label: 'OpenAI embedding URL'
+    openai_embedding_dimensions:
+      type: integer
+      label: 'OpenAI embedding imensions'
+    openai_embedding_batch_size:
+      type: integer
+      label: 'OpenAI embedding batch size (number of texts to pass to the API).'
+    openai_embedding_max_tokens:
+      type: integer
+      label: 'OpenAI embedding max tokens (total number of tokens that can be processed in one API call).'
+    openai_embedding_model:
+      type: string
+      label: 'OpenAI embedding model'
+    openai_completion_url:
+      type: string
+      label: 'OpenAI completion URL'
+    openai_completion_model:
+      type: string
+      label: 'OpenAI completion URL'
+    mutool:
+      type: string
+      label: 'Path to the MuPDF mutool executable'

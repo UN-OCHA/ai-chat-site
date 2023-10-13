@@ -1,0 +1,35 @@
+services:
+  cache.ocha_reliefweb_cache:
+    class: Drupal\Core\Cache\CacheBackendInterface
+    tags:
+      - { name: cache.bin }
+    factory: cache_factory:get
+    arguments: [ocha_reliefweb_cache]
+  plugin.manager.ocha_reliefweb_chat.completion:
+    class: Drupal\ocha_reliefweb_chat\Plugin\CompletionPluginManager
+    parent: default_plugin_manager
+  plugin.manager.ocha_reliefweb_chat.embedding:
+    class: Drupal\ocha_reliefweb_chat\Plugin\EmbeddingPluginManager
+    parent: default_plugin_manager
+  plugin.manager.ocha_reliefweb_chat.text_extractor:
+    class: Drupal\ocha_reliefweb_chat\Plugin\TextExtractorPluginManager
+    parent: default_plugin_manager
+  plugin.manager.ocha_reliefweb_chat.text_splitter:
+    class: Drupal\ocha_reliefweb_chat\Plugin\TextSplitterPluginManager
+    parent: default_plugin_manager
+  plugin.manager.ocha_reliefweb_chat.vector_store:
+    class: Drupal\ocha_reliefweb_chat\Plugin\VectorStorePluginManager
+    parent: default_plugin_manager
+  ocha_reliefweb_chat.chat:
+    class: Drupal\ocha_reliefweb_chat\Services\OchaReliefWebChat
+    arguments:
+      - '@config.factory'
+      - '@logger.factory'
+      - '@state'
+      - '@ocha_reliefweb_api.client'
+      - '@ocha_reliefweb_api.converter'
+      - '@plugin.manager.ocha_reliefweb_chat.completion'
+      - '@plugin.manager.ocha_reliefweb_chat.embedding'
+      - '@plugin.manager.ocha_reliefweb_chat.text_extractor'
+      - '@plugin.manager.ocha_reliefweb_chat.text_splitter'
+      - '@plugin.manager.ocha_reliefweb_chat.vector_store'
