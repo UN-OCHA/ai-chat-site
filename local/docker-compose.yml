@@ -10,10 +10,93 @@ networks:
 volumes:
   site-database:
   site-database-log:
+  site-elasticsearch:
   site-public:
   site-private:
 
 services:
+  elasticsearch:
+    image: public.ecr.aws/unocha/$ELASTIC_IMAGE:$ELASTIC_TAG
+    build:
+      context: "./elasticsearch"
+      args:
+        ELASTIC_TAG: $ELASTIC_TAG
+    hostname: $PROJECT_NAME-elasticsearch
+    container_name: $PROJECT_NAME-elasticsearch
+    ulimits:
+      nproc: 65536
+      nofile: 65536
+      memlock: -1
+    environment:
+      ENVIRONMENT:
+      bootstrap.memory_lock: 'true'
+      http.compression: 'true'
+      ingest.geoip.downloader.enabled: 'false'
+      xpack.security.enabled: 'false'
+      discovery.type: single-node
+      discovery.seed_hosts: 127.0.0.1
+      node.name: $PROJECT_NAME
+      network.bind_host: 0.0.0.0
+      cluster.name: $PROJECT_NAME
+      ES_JAVA_OPTS:
+      LICENSE: basic
+      VIRTUAL_HOST: elasticsearch.$SITE_DOMAIN
+      VIRTUAL_PORT: 9200
+      VIRTUAL_NETWORK: ${PROXY:-proxy}
+    volumes:
+      - "site-elasticsearch:/usr/share/elasticsearch/data:rw"
+    labels:
+      caddy: es.$SITE_DOMAIN
+      caddy.reverse_proxy: "{{upstreams}}"
+    expose:
+      - "9200"
+    networks:
+      - default
+      - proxy
+
+  completion:
+    image: $PROJECT_NAME-completion:$IMAGE_TAG
+    hostname: $PROJECT_NAME-completion
+    container_name: $PROJECT_NAME-completion
+    build:
+      context: "./completion"
+    ulimits:
+      # Needed so that the model can be fully loaded into memory.
+      memlock: -1
+    volumes:
+      - "./models:/opt/models"
+    environment:
+      MODEL: /opt/models/dolphin-2.0-mistral-7b.Q6_K.gguf
+      # Adjust based on the number of available CPUs.
+      N_TRHEADS: 6
+      VIRTUAL_HOST: completion.$SITE_DOMAIN
+      VIRTUAL_PORT: 80
+      VIRTUAL_NETWORK: ${PROXY:-proxy}
+    expose:
+      - "80"
+    networks:
+      - default
+      - proxy
+
+  embedding:
+    image: $PROJECT_NAME-embedding:$IMAGE_TAG
+    hostname: $PROJECT_NAME-embedding
+    container_name: $PROJECT_NAME-embedding
+    build:
+      context: "./embedding"
+    volumes:
+      - "./models:/opt/models"
+      - "./embedding/app.py:/srv/www/html/app.py"
+    environment:
+      VIRTUAL_HOST: embedding.$SITE_DOMAIN
+      VIRTUAL_PORT: 80
+      VIRTUAL_NETWORK: ${PROXY:-proxy}
+    expose:
+      - "80"
+    networks:
+      - default
+      - proxy
+
   mailpit:
     image: axllent/mailpit:latest
     hostname: $PROJECT_NAME-mailpit

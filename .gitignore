@@ -47,6 +47,8 @@ buildlog.txt
 # Ignore local development files.
 /local/.env
 /local/shared/settings/settings.site.php
+/local/models/*
+!/local/models/README.md
 
 # Coverage
 /phpcov.phar
