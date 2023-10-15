@@ -54,6 +54,7 @@
         "drush/drush": "^11.3",
         "oomphinc/composer-installers-extender": "^2.0",
         "orakili/composer-drupal-info-file-patch-helper": "^1",
+        "symfony/uid": "^6.3",
         "unocha/common_design": "^9.1"
     },
     "require-dev": {
