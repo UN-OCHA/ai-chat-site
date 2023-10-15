@@ -1,3 +1,4 @@
-# Local LLM models.
+Local LLM models
+----------------
 
 Download models from Huggingface for example.
