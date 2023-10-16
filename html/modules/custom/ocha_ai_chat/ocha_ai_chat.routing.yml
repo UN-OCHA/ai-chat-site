@@ -1,0 +1,8 @@
+ocha_ai_chat.chat_form:
+  path: '/ai/chat'
+  defaults:
+    _form: '\Drupal\ocha_ai_chat\Form\OchaAiChatForm'
+    _title: 'Chat with documents'
+  requirements:
+    _user_is_logged_in: 'TRUE'
+    _permission: access ocha ai chat

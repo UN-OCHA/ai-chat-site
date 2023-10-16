@@ -1,8 +1,0 @@
-ocha_reliefweb_chat.chat_form:
-  path: '/reliefweb/chat'
-  defaults:
-    _form: '\Drupal\ocha_reliefweb_chat\Form\OchaReliefWebChatForm'
-    _title: 'Chat with ReliefWeb documents'
-  requirements:
-    _user_is_logged_in: 'TRUE'
-    _permission: access reliefweb chat

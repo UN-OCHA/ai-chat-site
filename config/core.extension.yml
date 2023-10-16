@@ -50,7 +50,7 @@ module:
   mysql: 0
   node: 0
   ocha_reliefweb_api: 0
-  ocha_reliefweb_chat: 0
+  ocha_ai_chat: 0
   options: 0
   page_cache: 0
   path: 0

@@ -11,7 +11,7 @@ dependencies:
     - media
     - menu_link_content
     - node
-    - ocha_reliefweb_chat
+    - ocha_ai_chat
     - paragraphs
     - path
     - taxonomy
@@ -24,8 +24,8 @@ permissions:
   - 'access content overview'
   - 'access files overview'
   - 'access media overview'
-  - 'access reliefweb chat'
-  - 'access reliefweb chat advanced features'
+  - 'access ocha ai chat'
+  - 'access ocha ai chat advanced features'
   - 'access taxonomy overview'
   - 'access toolbar'
   - 'administer taxonomy'

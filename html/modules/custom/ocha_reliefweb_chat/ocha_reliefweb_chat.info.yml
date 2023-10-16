@@ -1,7 +1,0 @@
-type: module
-name: OCHA ReliefWeb Chat
-description: 'Provides AI integration to chat with ReliefWeb content.'
-package: ocha
-core_version_requirement: ^9 || ^10
-dependencies:
-  - drupal:ocha_reliefweb_api
