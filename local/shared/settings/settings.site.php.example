@@ -32,13 +32,13 @@ $config['stage_file_proxy.settings']['excluded_extensions'] = '';
 // Set the debug var dumper.
 $config['devel.settings']['devel_dumper'] = 'var_dumper';
 
-// OCHA ReliefWeb AI Chat settings.
-$config['ocha_reliefweb_chat.settings']['elasticsearch_url'] = 'https://elasticsearch.ai-chat-local.test';
-$config['ocha_reliefweb_chat.settings']['elasticsearch_indexing_batch_size'] = 10;
-$config['ocha_reliefweb_chat.settings']['openai_embedding_url'] = 'https://embedding.ai-chat-local.test/v1/embeddings';
-$config['ocha_reliefweb_chat.settings']['openai_embedding_model'] = 'whatever';
-$config['ocha_reliefweb_chat.settings']['openai_embedding_batch_size'] = 16;
-$config['ocha_reliefweb_chat.settings']['openai_embedding_dimensions'] = 384;
-$config['ocha_reliefweb_chat.settings']['openai_embedding_max_tokens'] = 256;
-$config['ocha_reliefweb_chat.settings']['openai_completion_url'] = 'https://completion.ai-chat-local.test/v1/chat/completions';
-$config['ocha_reliefweb_chat.settings']['openai_completion_model'] = 'whatever';
+// OCHA AI Chat settings.
+$config['ocha_ai_chat.settings']['elasticsearch_url'] = 'https://elasticsearch.ai-chat-local.test';
+$config['ocha_ai_chat.settings']['elasticsearch_indexing_batch_size'] = 10;
+$config['ocha_ai_chat.settings']['openai_embedding_url'] = 'https://embedding.ai-chat-local.test/v1/embeddings';
+$config['ocha_ai_chat.settings']['openai_embedding_model'] = 'whatever';
+$config['ocha_ai_chat.settings']['openai_embedding_batch_size'] = 16;
+$config['ocha_ai_chat.settings']['openai_embedding_dimensions'] = 384;
+$config['ocha_ai_chat.settings']['openai_embedding_max_tokens'] = 256;
+$config['ocha_ai_chat.settings']['openai_completion_url'] = 'https://completion.ai-chat-local.test/v1/chat/completions';
+$config['ocha_ai_chat.settings']['openai_completion_model'] = 'whatever';
