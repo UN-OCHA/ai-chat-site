@@ -1,7 +1,7 @@
 # Variables. Yes.
 DOCKER=docker
 DOCKER_BUILDKIT=0
-IMAGE_NAME=rwint-ai-chat-site
+IMAGE_NAME=ai-chat-site
 IMAGE_TAG=local
 
 # The main build recipe.

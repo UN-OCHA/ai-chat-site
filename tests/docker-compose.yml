@@ -1,5 +1,5 @@
 version: "2.2"
-name: rwint-ai-chat-test
+name: ai-chat-test
 
 networks:
   default:
@@ -12,8 +12,8 @@ services:
   memcache:
     restart: always
     image: public.ecr.aws/unocha/memcache:1.6
-    hostname: rwint-ai-chat-test-memcache
-    container_name: rwint-ai-chat-test-memcache
+    hostname: ai-chat-test-memcache
+    container_name: ai-chat-test-memcache
     ports:
       - "11211"
     networks:
@@ -23,21 +23,21 @@ services:
 
   mysql:
     image: public.ecr.aws/unocha/mysql:10.6
-    hostname: rwint-ai-chat-test-mysql
-    container_name: rwint-ai-chat-test-mysql
+    hostname: ai-chat-test-mysql
+    container_name: ai-chat-test-mysql
     environment:
-      - MYSQL_DB=rwint-ai-chat
-      - MYSQL_USER=rwint-ai-chat
-      - MYSQL_PASS=rwint-ai-chat
+      - MYSQL_DB=ai-chat
+      - MYSQL_USER=ai-chat
+      - MYSQL_PASS=ai-chat
     networks:
       - default
 
   drupal:
-    # Default to `rwint-ai-chat-site` for compatibility with the github tests.
+    # Default to `ai-chat-site` for compatibility with the github tests.
     # @see Makefile.
-    image: public.ecr.aws/unocha/${IMAGE_NAME:-rwint-ai-chat-site}:${IMAGE_TAG:-local}
-    hostname: rwint-ai-chat-test-site
-    container_name: rwint-ai-chat-test-site
+    image: public.ecr.aws/unocha/${IMAGE_NAME:-ai-chat-site}:${IMAGE_TAG:-local}
+    hostname: ai-chat-test-site
+    container_name: ai-chat-test-site
     depends_on:
       - memcache
       - mysql
@@ -56,12 +56,12 @@ services:
     environment:
       - TERM=xterm
       - ENVIRONMENT=dev
-      - NGINX_SERVERNAME=rwint-ai-chat-test-site,localhost,127.0.0.1
-      - NGINX_OVERRIDE_PROTOCOL=HTTP,rwint-ai-chat-test-site,localhost,127.0.0.1
-      - DRUSH_OPTIONS_URI=http://rwint-ai-chat-test-site
-      - DRUPAL_DB_DATABASE=rwint-ai-chat
-      - DRUPAL_DB_USERNAME=rwint-ai-chat
-      - DRUPAL_DB_PASSWORD=rwint-ai-chat
+      - NGINX_SERVERNAME=ai-chat-test-site,localhost,127.0.0.1
+      - NGINX_OVERRIDE_PROTOCOL=HTTP,ai-chat-test-site,localhost,127.0.0.1
+      - DRUSH_OPTIONS_URI=http://ai-chat-test-site
+      - DRUPAL_DB_DATABASE=ai-chat
+      - DRUPAL_DB_USERNAME=ai-chat
+      - DRUPAL_DB_PASSWORD=ai-chat
       - DRUPAL_DB_HOST=mysql
       - DRUPAL_DB_DRIVER=mysql
       - PHP_ENVIRONMENT=dev

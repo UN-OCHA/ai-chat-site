@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
-# This is the equivalent of the tests in `.travis.yml` that can be run locally.
+# This is the equivalent of the github worklflow tests that can be run locally.
 
-IMAGE_NAME=rwint-ai-chat-test
+IMAGE_NAME=ai-chat-test
 IMAGE_TAG=test
 
 function cleanup() {
