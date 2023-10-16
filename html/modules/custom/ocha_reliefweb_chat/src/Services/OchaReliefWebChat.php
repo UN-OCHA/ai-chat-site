@@ -388,6 +388,9 @@ class OchaReliefWebChat {
     }
     $stats['Processing'] = microtime(TRUE) - $time;
 
+    // @todo better logging.
+    $this->logger->info(print_r($stats, TRUE));
+
     fclose($file);
 
     return $pages;
@@ -552,7 +555,7 @@ class OchaReliefWebChat {
     // Generate the prompt.
     $context = [
       // @todo get that from the config or settings.
-      "You are a helpful assistant. Answer the user's question concisely and exactly, using only the following information. Reference the given sources at the end of the answer. Say you don't know if you cannot answer.",
+      "You are a helpful assistant. Answer the user's question concisely and exactly, using only the following information. Say you don't know if you cannot answer.",
     ];
 
     foreach ($passages as $passage) {
@@ -564,6 +567,9 @@ class OchaReliefWebChat {
     $time = microtime(TRUE);
     $answer = $this->getCompletionPlugin()->answer($question, $context);
     $stats['Get answer'] = microtime(TRUE) - $time;
+
+    // @todo better logging.
+    $this->logger->info(print_r($stats, TRUE));
 
     return $answer;
   }
