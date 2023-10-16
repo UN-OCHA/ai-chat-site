@@ -101,7 +101,7 @@ class OchaReliefWebChatForm extends FormBase {
       '#type' => 'inline_template',
       '#template' => '<div class="answer"><h2>{% trans %}Answer{% endtrans %}</h2><p>{{ answer }}</p></div>',
       '#context' => [
-        'answer' => $form_state->getValue('question') ?? '',
+        'answer' => $form_state->getValue('answer') ?? '',
       ],
     ];
 
