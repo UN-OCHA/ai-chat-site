@@ -1,6 +1,6 @@
 {
-    "name": "unocha/rwint-ai-chat",
-    "description": "ReliefWeb Chat",
+    "name": "unocha/ai-chat-site",
+    "description": "ReliefWeb AI Chat",
     "type": "project",
     "license": "GPL-2.0-or-later",
     "authors": [
