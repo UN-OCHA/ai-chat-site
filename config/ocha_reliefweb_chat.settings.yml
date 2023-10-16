@@ -1,0 +1,12 @@
+_core:
+  default_config_hash: Jx-FDt4mAb8EqY3NaEqd_7jLhs31MEflMZ1tdv6MZC8
+elasticsearch_url: null
+elasticsearch_indexing_batch_size: null
+openai_embedding_url: null
+openai_embedding_model: null
+openai_embedding_dimensions: null
+openai_embedding_batch_size: null
+openai_embedding_max_tokens: null
+openai_completion_url: null
+openai_completion_model: null
+mutool: /usr/bin/mutool
