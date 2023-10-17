@@ -29,6 +29,21 @@ ocha_ai_chat.settings:
     openai_completion_model:
       type: string
       label: 'OpenAI completion URL'
+    reliefweb_api_url:
+      type: string
+      label: 'ReliefWeb API URL'
+    reliefweb_api_appname:
+      type: string
+      label: 'App name parameter to indentify the API requests.'
+    reliefweb_api_cache_enabled:
+      type: boolean
+      label: 'Cache the API query results.'
+    reliefweb_api_cache_lifetime:
+      type: integer
+      label: 'How long to cache the API query results.'
+    reliefweb_api_converter:
+      type: string
+      label: 'URL of the ReliefWeb API converter.'
     mutool:
       type: string
       label: 'Path to the MuPDF mutool executable'
