@@ -50,7 +50,7 @@ class Elasticsearch extends VectorStorePluginBase {
       'mappings' => [
         'properties' => [
           'id' => [
-            'type' => 'integer',
+            'type' => 'keyword',
           ],
           'title' => [
             'type' => 'text',
@@ -59,7 +59,32 @@ class Elasticsearch extends VectorStorePluginBase {
             'type' => 'text',
           ],
           'url' => [
-            'type' => 'text',
+            'type' => 'keyword',
+          ],
+          'source' => [
+            'type' => 'object',
+            'properties' => [
+              'name' => [
+                'type' => 'text',
+              ],
+              'shortname' => [
+                'type' => 'text',
+              ],
+            ],
+          ],
+          'date' => [
+            'type' => 'object',
+            'properties' => [
+              'changed' => [
+                'type' => 'date',
+              ],
+              'created' => [
+                'type' => 'date',
+              ],
+              'original' => [
+                'type' => 'date',
+              ],
+            ],
           ],
           'contents' => [
             'type' => 'nested',
@@ -122,7 +147,7 @@ class Elasticsearch extends VectorStorePluginBase {
    * {@inheritdoc}
    */
   public function indexExists(string $index): bool {
-    return !is_null($this->request('HEAD', $index));
+    return !is_null($this->request('HEAD', $index, valid_status_codes: [404]));
   }
 
   /**
@@ -211,7 +236,10 @@ class Elasticsearch extends VectorStorePluginBase {
     $query = [
       '_source' => [
         'id',
+        'url',
         'title',
+        'source',
+        'date',
         'contents.url',
         'contents.type',
       ],
@@ -314,13 +342,15 @@ class Elasticsearch extends VectorStorePluginBase {
    * @param string|null $content_type
    *   Optional content type of the payload. If not defined it is assumed to be
    *   JSON.
+   * @param array $valid_status_codes
+   *   List of valid status codes that should not be logged as errors.
    *
    * @return \Psr\Http\Message\ResponseInterface|null
    *   A guzzle response or NULL if the request was not successful.
    *
    * @todo handle exceptions.
    */
-  protected function request(string $method, string $endpoint, $payload = NULL, ?string $content_type = NULL): ?ResponseInterface {
+  protected function request(string $method, string $endpoint, $payload = NULL, ?string $content_type = NULL, array $valid_status_codes = []): ?ResponseInterface {
     $url = $this->getUrl() . '/' . ltrim($endpoint, '/');
     $options = [];
 
@@ -340,14 +370,15 @@ class Elasticsearch extends VectorStorePluginBase {
     }
     catch (BadResponseException $exception) {
       $response = $exception->getResponse();
-      // @todo maybe add a paramete to the method with status codes that are
-      // not considered errors like 404 when checking for the index existence.
-      $this->logger->error(strtr('@method request to @endpoint failed with @status error: @error', [
-        '@method' => $method,
-        '@endpoint' => $endpoint,
-        '@status' => $response->getStatusCode(),
-        '@error' => $exception->getMessage(),
-      ]));
+      $status_code = $response->getStatusCode();
+      if (!in_array($status_code, $valid_status_codes)) {
+        $this->logger->error(strtr('@method request to @endpoint failed with @status error: @error', [
+          '@method' => $method,
+          '@endpoint' => $endpoint,
+          '@status' => $status_code,
+          '@error' => $exception->getMessage(),
+        ]));
+      }
       return NULL;
     }
 

@@ -10,16 +10,15 @@ use Drupal\ocha_ai_chat\Plugin\CompletionPluginInterface;
 use Drupal\ocha_ai_chat\Plugin\CompletionPluginManagerInterface;
 use Drupal\ocha_ai_chat\Plugin\EmbeddingPluginInterface;
 use Drupal\ocha_ai_chat\Plugin\EmbeddingPluginManagerInterface;
+use Drupal\ocha_ai_chat\Plugin\SourcePluginInterface;
+use Drupal\ocha_ai_chat\Plugin\SourcePluginManagerInterface;
 use Drupal\ocha_ai_chat\Plugin\TextExtractorPluginInterface;
 use Drupal\ocha_ai_chat\Plugin\TextExtractorPluginManagerInterface;
 use Drupal\ocha_ai_chat\Plugin\TextSplitterPluginInterface;
 use Drupal\ocha_ai_chat\Plugin\TextSplitterPluginManagerInterface;
 use Drupal\ocha_ai_chat\Plugin\VectorStorePluginInterface;
 use Drupal\ocha_ai_chat\Plugin\VectorStorePluginManagerInterface;
-use Drupal\ocha_reliefweb_api\Services\OchaReliefWebApiClient;
-use Drupal\ocha_reliefweb_api\Services\OchaReliefWebApiConverter;
 use Psr\Log\LoggerInterface;
-use Symfony\Component\Uid\Uuid;
 
 /**
  * OCHA AI Chat service.
@@ -48,20 +47,6 @@ class OchaAiChat {
   protected StateInterface $state;
 
   /**
-   * ReliefWeb API client.
-   *
-   * @var \Drupal\ocha_reliefweb_api\Services\OchaReliefWebApiClient
-   */
-  protected OchaReliefWebApiClient $reliefWebApiClient;
-
-  /**
-   * ReliefWeb API converter.
-   *
-   * @var \Drupal\ocha_reliefweb_api\Services\OchaReliefWebApiConverter
-   */
-  protected OchaReliefWebApiConverter $reliefWebApiConverter;
-
-  /**
    * Completion plugin manager.
    *
    * @var \Drupal\ocha_ai_chat\Plugin\CompletionPluginManagerInterface
@@ -74,6 +59,13 @@ class OchaAiChat {
    * @var \Drupal\ocha_ai_chat\Plugin\EmbeddingPluginManagerInterface
    */
   protected EmbeddingPluginManagerInterface $embeddingPluginManager;
+
+  /**
+   * Source plugin manager.
+   *
+   * @var \Drupal\ocha_ai_chat\Plugin\SourcePluginManagerInterface
+   */
+  protected SourcePluginManagerInterface $sourcePluginManager;
 
   /**
    * Text extractor plugin manager.
@@ -112,14 +104,12 @@ class OchaAiChat {
    *   The logger factory service.
    * @param \Drupal\Core\State\StateInterface $state
    *   The state service.
-   * @param \Drupal\ocha_reliefweb_api\Services\OchaReliefWebApiClient $reliefweb_api_client
-   *   The ReliefWeb API client.
-   * @param \Drupal\ocha_reliefweb_api\Services\OchaReliefWebApiConverter $reliefweb_api_converter
-   *   The ReliefWeb API converter.
    * @param \Drupal\ocha_ai_chat\Plugin\CompletionPluginManagerInterface $completion_plugin_manager
    *   The completion plugin manager.
    * @param \Drupal\ocha_ai_chat\Plugin\EmbeddingPluginManagerInterface $embedding_plugin_manager
    *   The embedding plugin manager.
+   * @param \Drupal\ocha_ai_chat\Plugin\SourcePluginManagerInterface $source_plugin_manager
+   *   The source plugin manager.
    * @param \Drupal\ocha_ai_chat\Plugin\TextExtractorPluginManagerInterface $text_extractor_plugin_manager
    *   The text extractor plugin manager.
    * @param \Drupal\ocha_ai_chat\Plugin\TextSplitterPluginManagerInterface $text_splitter_plugin_manager
@@ -131,10 +121,9 @@ class OchaAiChat {
     ConfigFactoryInterface $config_factory,
     LoggerChannelFactoryInterface $logger_factory,
     StateInterface $state,
-    OchaReliefWebApiClient $reliefweb_api_client,
-    OchaReliefWebApiConverter $reliefweb_api_converter,
     CompletionPluginManagerInterface $completion_plugin_manager,
     EmbeddingPluginManagerInterface $embedding_plugin_manager,
+    SourcePluginManagerInterface $source_plugin_manager,
     TextExtractorPluginManagerInterface $text_extractor_plugin_manager,
     TextSplitterPluginManagerInterface $text_splitter_plugin_manager,
     VectorStorePluginManagerInterface $vector_store_plugin_manager
@@ -142,13 +131,125 @@ class OchaAiChat {
     $this->config = $config_factory->get('ocha_ai_chat.settings');
     $this->logger = $logger_factory->get('ocha_ai_chat');
     $this->state = $state;
-    $this->reliefWebApiClient = $reliefweb_api_client;
-    $this->reliefWebApiConverter = $reliefweb_api_converter;
     $this->completionPluginManager = $completion_plugin_manager;
     $this->embeddingPluginManager = $embedding_plugin_manager;
+    $this->sourcePluginManager = $source_plugin_manager;
     $this->textExtractorPluginManager = $text_extractor_plugin_manager;
     $this->textSplitterPluginManager = $text_splitter_plugin_manager;
     $this->vectorStorePluginManager = $vector_store_plugin_manager;
+  }
+
+  /**
+   * Answer the question against the ReliefWeb documents from the river URL.
+   *
+   * 1. Retrieve the documents from the ReliefWeb API URL.
+   * 2. Embed the documents if not already.
+   * 3. Generate the embedding for the question
+   * 4. Find the documents relevant to the question.
+   * 5. Generate the prompt context.
+   * 6. Answer the question.
+   *
+   * @param string $question
+   *   Question.
+   * @param string $url
+   *   Document source URL.
+   * @param bool $reset
+   *   If TRUE, delete the index. This is mostly for development.
+   *
+   * @return string
+   *   Answer.
+   */
+  public function answer(string $question, string $url, bool $reset = FALSE): string {
+    // Stats to record the time of each operation.
+    // @todo either store the stats elsewhere (log etc.) or remove.
+    $stats = [];
+
+    // Retrieve the source documents matching the document source URL.
+    $time = microtime(TRUE);
+    ['index' => $index, 'documents' => $documents] = $this->getSourceDocuments($url);
+    $stats['Get source documents'] = microtime(TRUE) - $time;
+
+    // If there are no documents to query, then no need to ask the AI.
+    if (empty($documents)) {
+      return 'Sorry, no documents were found containing the answer to your question.';
+    }
+
+    // @todo remove, this is mostly for development and/or only remove the
+    // documents from the index.
+    if (!empty($reset)) {
+      $time = microtime(TRUE);
+      $this->getVectorStorePlugin()->deleteIndex($index);
+      $stats['Delete the index'] = microtime(TRUE) - $time;
+    }
+
+    // Maybe that should be done outside of the answer pipeline.
+    $time = microtime(TRUE);
+    if (!$this->embedDocuments($index, $documents)) {
+      return 'Sorry, there was an error trying to retrieve the documents to the answer to your question.';
+    }
+    $stats['Embed documents'] = microtime(TRUE) - $time;
+
+    $ids = array_keys($documents);
+
+    // Generate the embedding for the question.
+    $time = microtime(TRUE);
+    $embedding = $this->getEmbeddingPlugin()->generateEmbedding($question);
+    $stats['Get question embedding'] = microtime(TRUE) - $time;
+
+    // Find document passages relevant to the question.
+    $time = microtime(TRUE);
+    $passages = $this->getVectorStorePlugin()->getRelevantPassages($index, $ids, $question, $embedding);
+    if (empty($passages)) {
+      return 'Sorry, no documents were found containing the answer to your question.';
+    }
+    $stats['Get relevant passages'] = microtime(TRUE) - $time;
+
+    // Generate the prompt.
+    $context = [
+      // @todo get that from the config or settings.
+      "You are a helpful assistant. Answer the user's question concisely and exactly, using only the following information. Say you don't know if you cannot answer.",
+    ];
+
+    foreach ($passages as $passage) {
+      $context[] = $passage['text'];
+    }
+    $context = implode("\n\n", $context);
+
+    // @todo parse the answer and enrich it with the sources.
+    $time = microtime(TRUE);
+    $answer = $this->getCompletionPlugin()->answer($question, $context);
+    $stats['Get answer'] = microtime(TRUE) - $time;
+
+    // @todo better logging.
+    $this->logger->info(print_r($stats, TRUE));
+
+    return $answer;
+  }
+
+  /**
+   * Get a list of source documents for the given document source URL.
+   *
+   * @param string $url
+   *   Document source URL.
+   *
+   * @return array
+   *   Associative array with the index corresponding to the type of
+   *   documents and the list of source documents for the source URL.
+   */
+  protected function getSourceDocuments(string $url): array {
+    $plugin = $this->getSourcePlugin();
+
+    $limit = $this->getSetting('source_document_limit', 10);
+    $documents = $plugin->getDocuments($url, $limit);
+
+    // @todo allow multiple indices.
+    $resource = key($documents);
+    $documents = $documents[$resource] ?? [];
+
+    return [
+      'index' => $plugin->getPluginId() . '_' . $resource,
+      'documents' => $documents,
+    ];
   }
 
   /**
@@ -187,100 +288,6 @@ class OchaAiChat {
 
     // Index the documents.
     return $this->getVectorStorePlugin()->indexDocuments($index, $documents);
-  }
-
-  /**
-   * Get a list of ReliefWeb documents for the given ReliefWeb river URL.
-   *
-   * @param string $url
-   *   ReliefWeb river URL.
-   *
-   * @return array
-   *   Associative array with the index corresponding to the API resource
-   *   matching the river URL and the list of ReliefWeb documents matching
-   *   the query from the river URL.
-   */
-  protected function getReliefWebDocuments(string $url): array {
-    if (!$this->checkRiverUrl($url)) {
-      return [];
-    }
-
-    $url = $this->prepareRiverUrl($url);
-
-    // Convert the ReliefWeb river URL into an API payload.
-    // @todo Should we also retrieve the
-    $request = $this->reliefWebApiConverter->getApiRequest($url);
-    if (empty($request)) {
-      $this->logger->error('Unable to retrieve API request for the ReliefWeb river URL: @url.', [
-        '@url' => $url,
-      ]);
-      return [];
-    }
-
-    // Extract the river from the API url.
-    $resource = basename(parse_url($request['url'], \PHP_URL_PATH));
-
-    // Adjust the payload to limit number of documents.
-    $payload = $request['payload'];
-    $payload['limit'] = $this->getSetting('reliefweb_api_limit', 10);
-    $payload['sort'] = ['date.original:desc', 'id:desc'];
-
-    // @todo Review which fields could be useful for filtering (ex: country).
-    $payload['fields']['include'] = [
-      'id',
-      'url',
-      'url_alias',
-      'title',
-      'body',
-      'file.url',
-      'file.mimetype',
-    ];
-
-    // Retrieve the API data.
-    $data = $this->reliefWebApiClient->request($resource, $payload);
-
-    // Generate a document for each report and attachment.
-    $documents = [];
-    foreach ($data['data'] ?? [] as $items) {
-      $fields = $items['fields'];
-
-      // @todo add additional metadata like country, organization, notably
-      // to generate references and to help filtering the content and possibly
-      // extend the research to othe documents than the ones returned by
-      // the API query for example as "related documents" etc.
-      $document = [
-        'id' => $fields['id'],
-        'title' => $fields['title'],
-        'url' => $fields['url'],
-        'contents' => [],
-      ];
-
-      $title = trim($fields['title']);
-      $body = trim($fields['body'] ?? '');
-      $url = $fields['url_alias'];
-
-      $document['contents'][] = [
-        'url' => $url,
-        'type' => 'markdown',
-        'content' => "# $title\n\n$body",
-      ];
-
-      // Attachments with their URL so they can be downloaded.
-      foreach ($fields['file'] ?? [] as $file) {
-        $document['contents'][] = [
-          'url' => $file['url'],
-          'type' => 'file',
-          'mimetype' => 'application/pdf',
-        ];
-      }
-
-      $documents[$fields['id']] = $document;
-    }
-
-    return [
-      'index' => $resource,
-      'documents' => $documents,
-    ];
   }
 
   /**
@@ -441,140 +448,6 @@ class OchaAiChat {
   }
 
   /**
-   * Validate a ReliefWeb river URL.
-   *
-   * @param string $url
-   *   River URL.
-   *
-   * @return bool
-   *   TRUE if the URL is valid.
-   */
-  protected function checkRiverUrl(string $url): bool {
-    // @todo validate the URL to only allow updates URLs?
-    if (empty($url)) {
-      $this->logger->error('Missing ReliefWeb river URL.');
-      return FALSE;
-    }
-
-    // Ensure the river URL is for reports.
-    // @todo Handle other rivers at some point?
-    if (basename(parse_url($url, \PHP_URL_PATH)) !== 'updates') {
-      $this->logger->error('URL not an updates ReliefWeb river.');
-      return FALSE;
-    }
-
-    return TRUE;
-  }
-
-  /**
-   * Prepare the River URL to pass to the converter.
-   *
-   * @param string $url
-   *   River URL.
-   *
-   * @return string
-   *   River URL.
-   */
-  protected function prepareRiverUrl(string $url): string {
-    // Add a the "report_only" view parameter to exclude Maps, Infographics and
-    // interactive content since they don't really contain content to chat with.
-    $url = preg_replace('/([?&])view=[^?&]*/u', '$1view=reports', $url);
-    if (strpos($url, 'view=reports') !== FALSE) {
-      return $url;
-    }
-    else {
-      return $url . (strpos($url, '?') !== FALSE ? '&' : '?') . 'view=reports';
-    }
-  }
-
-  /**
-   * Answer the question against the ReliefWeb documents from the river URL.
-   *
-   * 1. Retrieve the documents from the ReliefWeb API URL.
-   * 2. Embed the documents if not already.
-   * 3. Generate the embedding for the question
-   * 4. Find the documents relevant to the question.
-   * 5. Generate the prompt context.
-   * 6. Answer the question.
-   *
-   * @param string $question
-   *   Question.
-   * @param string $url
-   *   ReliefWeb river URL.
-   * @param bool $reset
-   *   If TRUE, delete the index. This is mostly for development.
-   *
-   * @return string
-   *   Answer.
-   */
-  public function answer(string $question, string $url, bool $reset = FALSE): string {
-    // Stats to record the time of each operation.
-    // @todo either store the stats elsewhere (log etc.) or remove.
-    $stats = [];
-
-    // Retrieve the ReliefWeb documents matching the river URL.
-    $time = microtime(TRUE);
-    ['index' => $index, 'documents' => $documents] = $this->getReliefWebDocuments($url);
-    $stats['Get ReliefWeb documents'] = microtime(TRUE) - $time;
-
-    // If there are no documents to query, then no need to ask the AI.
-    if (empty($documents)) {
-      return 'Sorry, no documents were found containing the answer to your question.';
-    }
-
-    // @todo remove, this is mostly for development and/or only remove the
-    // documents from the index.
-    if (!empty($reset)) {
-      $time = microtime(TRUE);
-      $this->getVectorStorePlugin()->deleteIndex($index);
-      $stats['Delete the index'] = microtime(TRUE) - $time;
-    }
-
-    // Maybe that should be done outside of the answer pipeline.
-    $time = microtime(TRUE);
-    if (!$this->embedDocuments($index, $documents)) {
-      return 'Sorry, there was an error trying to retrieve the documents to the answer to your question.';
-    }
-    $stats['Embed documents'] = microtime(TRUE) - $time;
-
-    $ids = array_keys($documents);
-
-    // Generate the embedding for the question.
-    $time = microtime(TRUE);
-    $embedding = $this->getEmbeddingPlugin()->generateEmbedding($question);
-    $stats['Get question embedding'] = microtime(TRUE) - $time;
-
-    // Find document passages relevant to the question.
-    $time = microtime(TRUE);
-    $passages = $this->getVectorStorePlugin()->getRelevantPassages($index, $ids, $question, $embedding);
-    if (empty($passages)) {
-      return 'Sorry, no documents were found containing the answer to your question.';
-    }
-    $stats['Get relevant passages'] = microtime(TRUE) - $time;
-
-    // Generate the prompt.
-    $context = [
-      // @todo get that from the config or settings.
-      "You are a helpful assistant. Answer the user's question concisely and exactly, using only the following information. Say you don't know if you cannot answer.",
-    ];
-
-    foreach ($passages as $passage) {
-      $context[] = $passage['text'];
-    }
-    $context = implode("\n\n", $context);
-
-    // @todo parse the answer and enrich it with the sources.
-    $time = microtime(TRUE);
-    $answer = $this->getCompletionPlugin()->answer($question, $context);
-    $stats['Get answer'] = microtime(TRUE) - $time;
-
-    // @todo better logging.
-    $this->logger->info(print_r($stats, TRUE));
-
-    return $answer;
-  }
-
-  /**
    * Get the completion plugin.
    *
    * @return \Drupal\ocha_ai_chat\Plugin\CompletionPluginInterface
@@ -594,6 +467,17 @@ class OchaAiChat {
   protected function getEmbeddingPlugin(): EmbeddingPluginInterface {
     $plugin_id = $this->getSetting('embedding_plugin_id', 'openai');
     return $this->embeddingPluginManager->getPlugin($plugin_id);
+  }
+
+  /**
+   * Get the source plugin.
+   *
+   * @return \Drupal\ocha_ai_chat\Plugin\SourcePluginInterface
+   *   Source plugin.
+   */
+  protected function getSourcePlugin(): SourcePluginInterface {
+    $plugin_id = $this->getSetting('source_plugin_id', 'reliefweb');
+    return $this->sourcePluginManager->getPlugin($plugin_id);
   }
 
   /**
@@ -677,19 +561,6 @@ class OchaAiChat {
   protected function getSetting(string $name, mixed $default = NULL): mixed {
     $settings = $this->getSettings();
     return $settings[$name] ?? $default;
-  }
-
-  /**
-   * Get the UUID for to the URL.
-   *
-   * @param string $url
-   *   URL.
-   *
-   * @return string
-   *   UUID.
-   */
-  protected function getUuidFromUrl(string $url): string {
-    return Uuid::v3(Uuid::fromString(Uuid::NAMESPACE_URL), $url)->toRfc4122();
   }
 
 }

@@ -1,5 +1,5 @@
 _core:
-  default_config_hash: Jx-FDt4mAb8EqY3NaEqd_7jLhs31MEflMZ1tdv6MZC8
+  default_config_hash: sqHVe89ObOZctu1B8fmi5VIHqhBeBTkiQXSI1_FM7r8
 elasticsearch_url: null
 elasticsearch_indexing_batch_size: null
 openai_embedding_url: null
@@ -9,4 +9,9 @@ openai_embedding_batch_size: null
 openai_embedding_max_tokens: null
 openai_completion_url: null
 openai_completion_model: null
+reliefweb_api_url: 'https://api.reliefweb.int/v1'
+reliefweb_api_appname: unocha.org
+reliefweb_api_cache_enabled: true
+reliefweb_api_cache_lifetime: 300
+reliefweb_api_converter: 'https://reliefweb.int/search/converter/json'
 mutool: /usr/bin/mutool

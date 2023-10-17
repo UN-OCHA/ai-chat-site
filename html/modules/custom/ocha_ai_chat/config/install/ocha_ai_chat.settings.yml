@@ -7,4 +7,9 @@ openai_embedding_batch_size:
 openai_embedding_max_tokens:
 openai_completion_url:
 openai_completion_model:
+reliefweb_api_url: https://api.reliefweb.int/v1
+reliefweb_api_appname: unocha.org
+reliefweb_api_cache_enabled: true
+reliefweb_api_cache_lifetime: 300
+reliefweb_api_converter: https://reliefweb.int/search/converter/json
 mutool: /usr/bin/mutool

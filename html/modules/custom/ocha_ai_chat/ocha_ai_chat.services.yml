@@ -11,6 +11,9 @@ services:
   plugin.manager.ocha_ai_chat.embedding:
     class: Drupal\ocha_ai_chat\Plugin\EmbeddingPluginManager
     parent: default_plugin_manager
+  plugin.manager.ocha_ai_chat.source:
+    class: Drupal\ocha_ai_chat\Plugin\SourcePluginManager
+    parent: default_plugin_manager
   plugin.manager.ocha_ai_chat.text_extractor:
     class: Drupal\ocha_ai_chat\Plugin\TextExtractorPluginManager
     parent: default_plugin_manager
@@ -26,10 +29,9 @@ services:
       - '@config.factory'
       - '@logger.factory'
       - '@state'
-      - '@ocha_reliefweb_api.client'
-      - '@ocha_reliefweb_api.converter'
       - '@plugin.manager.ocha_ai_chat.completion'
       - '@plugin.manager.ocha_ai_chat.embedding'
+      - '@plugin.manager.ocha_ai_chat.source'
       - '@plugin.manager.ocha_ai_chat.text_extractor'
       - '@plugin.manager.ocha_ai_chat.text_splitter'
       - '@plugin.manager.ocha_ai_chat.vector_store'
