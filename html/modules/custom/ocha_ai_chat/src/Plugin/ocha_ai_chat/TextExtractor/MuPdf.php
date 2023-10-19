@@ -110,13 +110,12 @@ class MuPdf extends TextExtractorPluginBase {
    */
   protected function getMutool(): string {
     if (!isset($this->mutool)) {
-      $mutool = $this->config->get('mutool', '/usr/bin/mutool');
+      $mutool = $this->getPluginSetting('mutool', '/usr/bin/mutool');
       if (is_executable($mutool)) {
         $this->mutool = $mutool;
       }
       else {
-        // @todo log the error or throw an exception.
-        $this->mutool = '';
+        throw new \Exception('Mutool executable not found or invalid.');
       }
     }
     return $this->mutool;

@@ -30,4 +30,12 @@ interface EmbeddingPluginInterface {
    */
   public function generateEmbedding(string $text): array;
 
+  /**
+   * Get the number of dimensions for the embeddings.
+   *
+   * @return int
+   *   Dimensions.
+   */
+  public function getDimensions(): int;
+
 }

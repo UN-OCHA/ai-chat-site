@@ -207,7 +207,7 @@ class OchaAiChat {
     // Generate the prompt.
     $context = [
       // @todo get that from the config or settings.
-      "You are a helpful assistant. Answer the user's question concisely and exactly, using only the following information. Say you don't know if you cannot answer.",
+      "You are a helpful assistant. Answer the user's question concisely and exactly, using only the following information. Write complete sentences. Say you don't know if you cannot answer.",
     ];
 
     foreach ($passages as $passage) {
@@ -222,6 +222,11 @@ class OchaAiChat {
 
     // @todo better logging.
     $this->logger->info(print_r($stats, TRUE));
+
+    // The answer is empty for example if there was an error during the request.
+    if (empty($answer)) {
+      return 'Sorry, I was unable to answer to your question.';
+    }
 
     return $answer;
   }
@@ -286,8 +291,11 @@ class OchaAiChat {
     // Process the documents, extracting embeddings and preparing for indexing.
     $documents = $this->processDocuments($documents);
 
+    // Retrieve the dimensions of the embedding vectors.
+    $dimensions = $this->getEmbeddingPlugin()->getDimensions();
+
     // Index the documents.
-    return $this->getVectorStorePlugin()->indexDocuments($index, $documents);
+    return $this->getVectorStorePlugin()->indexDocuments($index, $documents, $dimensions);
   }
 
   /**
@@ -419,12 +427,16 @@ class OchaAiChat {
     $texts = $this->splitText($content);
     $embeddings = $this->getEmbeddingPlugin()->generateEmbeddings($texts);
 
+    // @todo handle cases where the embedding fails. Maybe we should not store
+    // the document in that case.
     $passages = [];
     foreach ($texts as $index => $text) {
-      $passages[] = [
-        'text' => $text,
-        'embedding' => $embeddings[$index],
-      ];
+      if (!empty($embeddings[$index])) {
+        $passages[] = [
+          'text' => $text,
+          'embedding' => $embeddings[$index],
+        ];
+      }
     }
 
     return [
@@ -454,7 +466,7 @@ class OchaAiChat {
    *   Embedding plugin.
    */
   protected function getCompletionPlugin(): CompletionPluginInterface {
-    $plugin_id = $this->getSetting('completion_plugin_id', 'openai');
+    $plugin_id = $this->getSetting('completion_plugin_id', 'aws_bedrock');
     return $this->completionPluginManager->getPlugin($plugin_id);
   }
 
@@ -465,7 +477,7 @@ class OchaAiChat {
    *   Embedding plugin.
    */
   protected function getEmbeddingPlugin(): EmbeddingPluginInterface {
-    $plugin_id = $this->getSetting('embedding_plugin_id', 'openai');
+    $plugin_id = $this->getSetting('embedding_plugin_id', 'aws_bedrock');
     return $this->embeddingPluginManager->getPlugin($plugin_id);
   }
 

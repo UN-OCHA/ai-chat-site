@@ -34,7 +34,7 @@ class Elasticsearch extends VectorStorePluginBase {
   /**
    * {@inheritdoc}
    */
-  public function createIndex(string $index, int $dimensions = 384): bool {
+  public function createIndex(string $index, int $dimensions): bool {
     if ($this->indexExists($index)) {
       return TRUE;
     }
@@ -153,22 +153,22 @@ class Elasticsearch extends VectorStorePluginBase {
   /**
    * {@inheritdoc}
    */
-  public function indexDocuments(string $index, array $documents): bool {
+  public function indexDocuments(string $index, array $documents, int $dimensions): bool {
     // Skip if there is nothing to index.
     if (empty($documents)) {
       return TRUE;
     }
 
     // Ensure the index exist.
-    if (!$this->createIndex($index)) {
-      $this->logger->error(strtr('Unable to create elasticsearch index: @index', [
+    if (!$this->createIndex($index, $dimensions)) {
+      $this->getLogger()->error(strtr('Unable to create elasticsearch index: @index', [
         '@index' => $index,
       ]));
       return FALSE;
     }
 
     // Bulk index the documents.
-    foreach (array_chunk($documents, $this->getIndexingBatchSize(), TRUE) as $chunks) {
+    foreach (array_chunk($documents, $this->getPluginSetting('indexing_batch_size', 1), TRUE) as $chunks) {
       $payload = [];
       foreach ($chunks as $id => $document) {
         $payload[] = json_encode(['index' => ['_id' => $id]]);
@@ -230,8 +230,8 @@ class Elasticsearch extends VectorStorePluginBase {
       return [];
     }
 
-    // @todo get that from the configuration.
-    $topk = 5;
+    // Number of results to consider.
+    $topk = $this->getPluginSetting('topk', 5);
 
     $query = [
       '_source' => [
@@ -316,12 +316,12 @@ class Elasticsearch extends VectorStorePluginBase {
 
       $passages = array_values($passages);
 
-      // @todo sort passages by score and limit the number.
+      // Sort by score descending.
       usort($passages, function ($a, $b) {
         return $b['score'] <=> $a['score'];
       });
 
-      // @todo get the number of passages to return from the config.
+      // Limit the number of passages.
       $passages = array_slice($passages, 0, $topk);
       return $passages;
     }
@@ -351,7 +351,7 @@ class Elasticsearch extends VectorStorePluginBase {
    * @todo handle exceptions.
    */
   protected function request(string $method, string $endpoint, $payload = NULL, ?string $content_type = NULL, array $valid_status_codes = []): ?ResponseInterface {
-    $url = $this->getUrl() . '/' . ltrim($endpoint, '/');
+    $url = rtrim($this->getPluginSetting('url'), '/') . '/' . ltrim($endpoint, '/');
     $options = [];
 
     if (isset($payload)) {
@@ -372,7 +372,7 @@ class Elasticsearch extends VectorStorePluginBase {
       $response = $exception->getResponse();
       $status_code = $response->getStatusCode();
       if (!in_array($status_code, $valid_status_codes)) {
-        $this->logger->error(strtr('@method request to @endpoint failed with @status error: @error', [
+        $this->getLogger()->error(strtr('@method request to @endpoint failed with @status error: @error', [
           '@method' => $method,
           '@endpoint' => $endpoint,
           '@status' => $status_code,
@@ -383,34 +383,6 @@ class Elasticsearch extends VectorStorePluginBase {
     }
 
     return $response;
-  }
-
-  /**
-   * Get the URL of the elasticsearch cluster.
-   *
-   * @return string
-   *   Elasticsearch URL.
-   */
-  protected function getUrl():string {
-    if (!isset($this->url)) {
-      // @todo throw an error if this is not defined.
-      $this->url = rtrim($this->config->get('elasticsearch_url'), '/');
-    }
-    return $this->url;
-  }
-
-  /**
-   * Get the indexing batch size.
-   *
-   * @return int
-   *   Indexing batch size.
-   */
-  protected function getIndexingBatchSize(): int {
-    if (!isset($this->indexingBatchSize)) {
-      // @todo throw an error if this is not defined.
-      $this->indexingBatchSize = (int) $this->config->get('elasticsearch_indexing_batch_size');
-    }
-    return $this->indexingBatchSize;
   }
 
   /**
