@@ -21,6 +21,7 @@
     ],
     "require": {
         "php": ">=8.2",
+        "aws/aws-sdk-php": "^3.283",
         "composer/installers": "^1.12",
         "cweagans/composer-patches": "^1.7",
         "drupal/admin_denied": "^2.0",
@@ -53,6 +54,7 @@
         "drupal/xmlsitemap": "^1.4",
         "drush/drush": "^11.3",
         "oomphinc/composer-installers-extender": "^2.0",
+        "openai-php/client": "^0.7.3",
         "orakili/composer-drupal-info-file-patch-helper": "^1",
         "symfony/uid": "^6.3",
         "unocha/common_design": "^9.1"
@@ -90,7 +92,8 @@
             "drupal/core-project-message": true,
             "oomphinc/composer-installers-extender": true,
             "orakili/composer-drupal-info-file-patch-helper": true,
-            "phpstan/extension-installer": true
+            "phpstan/extension-installer": true,
+            "php-http/discovery": true
         }
     },
     "extra": {
