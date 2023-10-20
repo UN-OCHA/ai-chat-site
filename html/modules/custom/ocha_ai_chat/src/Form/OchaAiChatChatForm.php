@@ -74,11 +74,10 @@ class OchaAiChatChatForm extends FormBase {
 
     $form['source_url'] = [
       '#type' => 'textfield',
-      '#title' => $this->t('Default ReliefWeb river URL'),
+      '#title' => $this->t('ReliefWeb river URL'),
       '#description' => $this->t('Filtered list of ReliefWeb content from https://reliefweb.int/updates to chat against.'),
       '#default_value' => $form_state->getValue('source_url') ?? $defaults['plugins']['source']['url'] ?? NULL,
       '#required' => TRUE,
-      '#access' => $this->currentUser->hasPermission('access ocha ai chat advanced features'),
       '#maxlength' => 2048,
     ];
 
@@ -88,7 +87,6 @@ class OchaAiChatChatForm extends FormBase {
       '#description' => $this->t('Maximum number of documents to chat against.'),
       '#default_value' => $form_state->getValue('source_url') ?? $defaults['plugins']['source']['limit'] ?? 10,
       '#required' => TRUE,
-      '#access' => $this->currentUser->hasPermission('access ocha ai chat advanced features'),
     ];
 
     $form['question'] = [
