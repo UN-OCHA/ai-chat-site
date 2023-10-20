@@ -3,6 +3,7 @@
 namespace Drupal\ocha_ai_chat\Plugin\ocha_ai_chat\Embedding;
 
 use Aws\BedrockRuntime\BedrockRuntimeClient;
+use Aws\Sts\StsClient;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\ocha_ai_chat\Plugin\EmbeddingPluginBase;
 
@@ -158,18 +159,37 @@ class AwsBedrock extends EmbeddingPluginBase {
    */
   protected function getApiClient(): BedrockRuntimeClient {
     if (!isset($this->apiClient)) {
-      $options = [
-        'credentials' => [
+      $region = $this->getPluginSetting('region');
+      $role_arn = $this->getPluginSetting('role_arn', NULL, FALSE);
+
+      if (!empty($role_arn)) {
+        $stsClient = new StsClient([
+          'region' => $region,
+          'version' => 'latest',
+        ]);
+
+        $result = $stsClient->AssumeRole([
+          'RoleArn' => $role_arn,
+          'RoleSessionName' => 'aws-bedrock-ocha-ai-chat',
+        ]);
+
+        $credentials = [
+          'key'    => $result['Credentials']['AccessKeyId'],
+          'secret' => $result['Credentials']['SecretAccessKey'],
+          'token'  => $result['Credentials']['SessionToken'],
+        ];
+      }
+      else {
+        $credentials = [
           'key' => $this->getPluginSetting('api_key'),
           'secret' => $this->getPluginSetting('api_secret'),
-        ],
-        'region'  => $this->getPluginSetting('region'),
-      ];
-
-      $endpoint = $this->getPluginSetting('endpoint', NULL, FALSE);
-      if (!empty($endpoint)) {
-        $options['endpoint'] = $endpoint;
+        ];
       }
+
+      $options = [
+        'credentials' => $credentials,
+        'region'  => $region,
+      ];
 
       $this->apiClient = new BedrockRuntimeClient($options);
     }
@@ -184,9 +204,31 @@ class AwsBedrock extends EmbeddingPluginBase {
 
     $plugin_type = $this->getPluginType();
     $plugin_id = $this->getPluginId();
+    $config = $this->getConfiguration() + $this->defaultConfiguration();
 
+    // Empty endpoint is allowed in which case the SDK will generate it.
     $form['plugins'][$plugin_type][$plugin_id]['endpoint']['#required'] = FALSE;
     $form['plugins'][$plugin_type][$plugin_id]['endpoint']['#description'] = $this->t('Endpoint of the API. Leave empty to use the official one.');
+
+    // Remove the requirement for the API key as it's possible to acces the API
+    // via the Role ARN.
+    $form['plugins'][$plugin_type][$plugin_id]['api_key']['#required'] = FALSE;
+
+    // API secret. Not mandatory for the same reason as the API key.
+    $form['plugins'][$plugin_type][$plugin_id]['api_secret'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('API secret'),
+      '#description' => $this->t('Optional secret to access the API.'),
+      '#default_value' => $config['api_secret'] ?? NULL,
+    ];
+
+    // Role ARN to access the API as an alternative to the API key.
+    $form['plugins'][$plugin_type][$plugin_id]['role_arn'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Role ARN'),
+      '#description' => $this->t('Role ARN to access the API.'),
+      '#default_value' => $config['role_arn'] ?? NULL,
+    ];
 
     return $form;
   }

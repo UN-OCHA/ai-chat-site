@@ -118,9 +118,6 @@ ocha_ai_chat.plugin.completion:
     api_key:
       type: string
       label: 'API key.'
-    api_secret:
-      type: string
-      label: 'API secret.'
     max_tokens:
       type: integer
       label: 'Max tokens.'
@@ -148,9 +145,6 @@ ocha_ai_chat.plugin.embedding:
     api_key:
       type: string
       label: 'API key.'
-    api_secret:
-      type: string
-      label: 'API secret.'
     batch_size:
       type: integer
       label: 'Batch size.'
@@ -197,16 +191,30 @@ ocha_ai_chat.plugin.vector_store:
 ocha_ai_chat.plugin.completion.aws_bedrock:
   type: ocha_ai_chat.plugin.completion
   label: 'AWS Bedrock completion plugin settings.'
-
-# Azure OpenAI completion plugin settings.
-ocha_ai_chat.plugin.completion.azure_openai:
-  type: ocha_ai_chat.plugin.completion
-  label: 'AWS Bedrock completion plugin settings.'
+  mapping:
+    api_secret:
+      type: string
+      label: 'API secret.'
+    role_arn:
+      type: string
+      label: 'AWS role ARN'
 
 # AWS Bedrock embedding plugin settings.
 ocha_ai_chat.plugin.embedding.aws_bedrock:
   type: ocha_ai_chat.plugin.embedding
   label: 'AWS Bedrock embedding plugin settings.'
+  mapping:
+    api_secret:
+      type: string
+      label: 'API secret.'
+    role_arn:
+      type: string
+      label: 'AWS role ARN'
+
+# Azure OpenAI completion plugin settings.
+ocha_ai_chat.plugin.completion.azure_openai:
+  type: ocha_ai_chat.plugin.completion
+  label: 'AWS Bedrock completion plugin settings.'
 
 # Azure OpenAI embedding plugin settings.
 ocha_ai_chat.plugin.embedding.azure_openai:

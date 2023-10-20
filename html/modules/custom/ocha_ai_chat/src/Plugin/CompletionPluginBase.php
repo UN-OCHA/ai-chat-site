@@ -65,19 +65,13 @@ abstract class CompletionPluginBase extends PluginBase implements CompletionPlug
       '#required' => TRUE,
     ];
 
-    $form['plugins'][$plugin_type][$plugin_id]['api_secret'] = [
-      '#type' => 'textfield',
-      '#title' => $this->t('API secret'),
-      '#description' => $this->t('Optional secret to access the API.'),
-      '#default_value' => $config['api_secret'] ?? NULL,
-    ];
-
     $form['plugins'][$plugin_type][$plugin_id]['max_tokens'] = [
       '#type' => 'number',
       '#title' => $this->t('Max tokens'),
       '#description' => $this->t('Maximum number of tokens to generate.'),
       '#default_value' => $config['max_tokens'] ?? NULL,
       '#required' => TRUE,
+      '#weight' => 10,
     ];
 
     $form['plugins'][$plugin_type][$plugin_id]['prompt_template'] = [
@@ -86,6 +80,7 @@ abstract class CompletionPluginBase extends PluginBase implements CompletionPlug
       '#description' => $this->t('Prompte template. Available placeholders: {{ context }} and {{ question }}.'),
       '#default_value' => $config['prompt_template'] ?? NULL,
       '#required' => TRUE,
+      '#weight' => 11,
     ];
 
     return $form;
