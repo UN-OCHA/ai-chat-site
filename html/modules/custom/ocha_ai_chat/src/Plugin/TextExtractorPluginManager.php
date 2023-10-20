@@ -30,4 +30,11 @@ class TextExtractorPluginManager extends PluginManagerBase implements TextExtrac
     $this->alterInfo('ocha_ai_chat_text_extractor_info');
   }
 
+  /**
+   * {@inheritdoc}
+   */
+  public function getPluginType(): string {
+    return 'text_extractor';
+  }
+
 }

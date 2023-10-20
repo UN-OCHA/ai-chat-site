@@ -1,8 +1,16 @@
 access ocha ai chat:
-  title: 'Access AI Chat'
-  description: 'Allow users to access the AI Chat form.'
+  title: 'Access OCHA AI Chat'
+  description: 'Allow users to access the OCHA AI Chat form.'
 
 access ocha ai chat advanced features:
-  title: 'Access AI Chat advanced features '
-  description: 'Allow users to access the advanced features in the the AI Chat form.'
+  title: 'Access OCHA AI Chat advanced features '
+  description: 'Allow users to access the advanced features in the the OCHA AI Chat form.'
+
+manage ocha ai chat default settings:
+  title: 'Manage OCHA ai chat default settings'
+  description: 'Allow users to manage the OCHA AI Chat form default settings'
+
+manage ocha ai chat configuration:
+  title: 'Manage OCHA ai chat configuration'
+  description: 'Allow users to manage the OCHA AI Chat module configuration'
 

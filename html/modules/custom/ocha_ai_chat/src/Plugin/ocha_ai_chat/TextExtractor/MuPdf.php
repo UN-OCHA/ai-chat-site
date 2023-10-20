@@ -2,6 +2,7 @@
 
 namespace Drupal\ocha_ai_chat\Plugin\ocha_ai_chat\TextExtractor;
 
+use Drupal\Core\Form\FormStateInterface;
 use Drupal\ocha_ai_chat\Plugin\TextExtractorPluginBase;
 
 /**
@@ -27,6 +28,27 @@ class MuPdf extends TextExtractorPluginBase {
    * @var string
    */
   protected $mutool;
+
+  /**
+   * {@inheritdoc}
+   */
+  public function buildConfigurationForm(array $form, FormStateInterface $form_state): array {
+    $form = parent::buildConfigurationForm($form, $form_state);
+
+    $plugin_type = $this->getPluginType();
+    $plugin_id = $this->getPluginId();
+    $config = $this->getConfiguration() + $this->defaultConfiguration();
+
+    $form['plugins'][$plugin_type][$plugin_id]['mutool'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Mutool'),
+      '#description' => $this->t('Path to the mutool executable'),
+      '#default_value' => $config['mutool'] ?? NULL,
+      '#required' => TRUE,
+    ];
+
+    return $form;
+  }
 
   /**
    * {@inheritdoc}
@@ -75,6 +97,13 @@ class MuPdf extends TextExtractorPluginBase {
   /**
    * {@inheritdoc}
    */
+  public function getSupportedMimetypes(): array {
+    return ['application/pdf'];
+  }
+
+  /**
+   * {@inheritdoc}
+   */
   protected function getPageRangeText(string $path, string $page_range): string {
     $tempfile = tempnam(sys_get_temp_dir(), 'mupdf_');
 
@@ -110,13 +139,12 @@ class MuPdf extends TextExtractorPluginBase {
    */
   protected function getMutool(): string {
     if (!isset($this->mutool)) {
-      $mutool = $this->config->get('mutool', '/usr/bin/mutool');
+      $mutool = $this->getPluginSetting('mutool', '/usr/bin/mutool');
       if (is_executable($mutool)) {
         $this->mutool = $mutool;
       }
       else {
-        // @todo log the error or throw an exception.
-        $this->mutool = '';
+        throw new \Exception('Mutool executable not found or invalid.');
       }
     }
     return $this->mutool;

@@ -10,30 +10,30 @@ use Drupal\ocha_ai_chat\Services\OchaAiChat;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
- * Form for the Ocha AI Chat module.
+ * Chat form for the Ocha AI Chat module.
  */
-class OchaAiChatForm extends FormBase {
+class OchaAiChatChatForm extends FormBase {
 
   /**
    * The current user.
    *
    * @var \Drupal\Core\Session\AccountProxyInterface
    */
-  protected $currentUser;
+  protected AccountProxyInterface $currentUser;
 
   /**
    * The state service.
    *
    * @var \Drupal\Core\State\StateInterface
    */
-  protected $state;
+  protected StateInterface $state;
 
   /**
    * The OCHA AI chat service.
    *
    * @var Drupal\ocha_ai_chat\Services\OchaAiChat
    */
-  protected $ochaAiChat;
+  protected OchaAiChat $ochaAiChat;
 
   /**
    * Constructor.
@@ -69,24 +69,24 @@ class OchaAiChatForm extends FormBase {
   /**
    * {@inheritdoc}
    */
-  public function buildForm(array $form, FormStateInterface $form_state) {
-    $defaults = $this->state->get('ocha_ai_chat.settings', []);
+  public function buildForm(array $form, FormStateInterface $form_state): array {
+    $defaults = $this->ochaAiChat->getSettings();
 
-    // @todo set maxlength.
-    $form['reliefweb_river_url'] = [
+    $form['source_url'] = [
       '#type' => 'textfield',
       '#title' => $this->t('Default ReliefWeb river URL'),
       '#description' => $this->t('Filtered list of ReliefWeb content from https://reliefweb.int/updates to chat against.'),
-      '#default_value' => $form_state->getValue('reliefweb_river_url') ?? $defaults['reliefweb_river_url'] ?? NULL,
+      '#default_value' => $form_state->getValue('source_url') ?? $defaults['plugins']['source']['url'] ?? NULL,
       '#required' => TRUE,
       '#access' => $this->currentUser->hasPermission('access ocha ai chat advanced features'),
+      '#maxlength' => 2048,
     ];
 
-    $form['reliefweb_api_limit'] = [
+    $form['source_limit'] = [
       '#type' => 'textfield',
       '#title' => $this->t('Document limit'),
       '#description' => $this->t('Maximum number of documents to chat against.'),
-      '#default_value' => $form_state->getValue('reliefweb_api_limit') ?? $defaults['reliefweb_api_limit'] ?? 10,
+      '#default_value' => $form_state->getValue('source_url') ?? $defaults['plugins']['source']['limit'] ?? 10,
       '#required' => TRUE,
       '#access' => $this->currentUser->hasPermission('access ocha ai chat advanced features'),
     ];
@@ -97,20 +97,51 @@ class OchaAiChatForm extends FormBase {
       '#default_value' => $form_state->getValue('question') ?? NULL,
     ];
 
-    $form['answer'] = [
-      '#type' => 'inline_template',
-      '#template' => '<div class="answer"><h2>{% trans %}Answer{% endtrans %}</h2><p>{{ answer }}</p></div>',
-      '#context' => [
-        'answer' => $form_state->getValue('answer') ?? '',
-      ],
+    $form['advanced'] = [
+      '#type' => 'details',
+      '#title' => $this->t('Advanced options'),
+      '#open' => FALSE,
     ];
 
-    $form['reset'] = [
+    // Completion plugin.
+    $completion_options = array_map(function ($plugin) {
+      return $plugin->getPluginLabel();
+    }, $this->ochaAiChat->getCompletionPluginManager()->getAvailablePlugins());
+
+    $completion_default = $form_state->getValue('completion_plugin_id') ??
+      $defaults['plugins']['completion']['plugin_id'] ??
+      key($completion_options);
+
+    $form['advanced']['completion_plugin_id'] = [
+      '#type' => 'select',
+      '#title' => $this->t('AI service'),
+      '#description' => $this->t('Select the AI service to use to generate the answer.'),
+      '#options' => $completion_options,
+      '#default_value' => $completion_default,
+      '#required' => TRUE,
+    ];
+
+    $form['advanced']['reset'] = [
       '#type' => 'checkbox',
       '#title' => $this->t('Reset'),
       '#description' => $this->t('Checking this will delete the index containing the data extracted from the ReliefWeb documents. Only use this for test purposes.'),
       '#default_value' => $form_state->getValue('reset') ?? NULL,
       '#access' => $this->currentUser->hasPermission('access ocha ai chat advanced features'),
+    ];
+
+    // Answer.
+    $answer = $form_state->getValue('answer');
+    $form['result'] = [
+      '#type' => 'fieldset',
+      '#title' => $this->t('Answer'),
+      '#access' => !empty($answer),
+    ];
+    $form['result']['answer'] = [
+      '#type' => 'inline_template',
+      '#template' => '<p>{{ answer }}</p>',
+      '#context' => [
+        'answer' => $answer,
+      ],
     ];
 
     // @todo add field with the result of the question.
@@ -131,14 +162,25 @@ class OchaAiChatForm extends FormBase {
   /**
    * {@inheritdoc}
    */
-  public function submitForm(array &$form, FormStateInterface $form_state) {
-    $river_url = $form_state->getValue('reliefweb_river_url');
+  public function submitForm(array &$form, FormStateInterface $form_state): void {
+    $source_url = $form_state->getValue('source_url');
+    $source_limit = $form_state->getValue('source_limit');
     $question = $form_state->getValue('question');
     $reset = $form_state->getValue('reset');
 
+    $completion_plugin_id = $form_state->getValue('completion_plugin_id');
+    if (isset($completion_plugin_id)) {
+      $completion_plugin = $this->ochaAiChat
+        ->getCompletionPluginManager()
+        ->getPlugin($completion_plugin_id);
+    }
+    else {
+      $completion_plugin = NULL;
+    }
+
     // Get the answer to the question.
     // @todo use server events etc. for a better UX.
-    $answer = $this->ochaAiChat->answer($question, $river_url, $reset);
+    $answer = $this->ochaAiChat->answer($question, $source_url, $source_limit, $reset, $completion_plugin);
     $form_state->setValue('answer', $answer);
 
     // Rebuild the form so that it is reloaded with the inputs from the user
@@ -149,8 +191,8 @@ class OchaAiChatForm extends FormBase {
   /**
    * {@inheritdoc}
    */
-  public function getFormId() {
-    return 'ocha_ai_chat';
+  public function getFormId(): string {
+    return 'ocha_ai_chat_chat_form';
   }
 
 }

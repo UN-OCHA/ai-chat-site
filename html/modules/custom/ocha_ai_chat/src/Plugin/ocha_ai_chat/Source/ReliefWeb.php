@@ -2,6 +2,7 @@
 
 namespace Drupal\ocha_ai_chat\Plugin\ocha_ai_chat\Source;
 
+use Drupal\Core\Form\FormStateInterface;
 use Drupal\ocha_ai_chat\Plugin\SourcePluginBase;
 use GuzzleHttp\Exception\BadResponseException;
 use Symfony\Component\Uid\Uuid;
@@ -32,18 +33,66 @@ class ReliefWeb extends SourcePluginBase {
   protected string $converterUrl;
 
   /**
-   * Flag to indicate that caching is enabled.
-   *
-   * @var bool
+   * {@inheritdoc}
    */
-  protected bool $cacheEnabled;
+  public function buildConfigurationForm(array $form, FormStateInterface $form_state): array {
+    $form = parent::buildConfigurationForm($form, $form_state);
+
+    $plugin_type = $this->getPluginType();
+    $plugin_id = $this->getPluginId();
+    $config = $this->getConfiguration() + $this->defaultConfiguration();
+
+    $form['plugins'][$plugin_type][$plugin_id]['api_url'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('API URL'),
+      '#description' => $this->t('ReliefWeb API URL.'),
+      '#default_value' => $config['api_url'] ?? NULL,
+      '#required' => TRUE,
+    ];
+
+    $form['plugins'][$plugin_type][$plugin_id]['converter_url'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('converter_url'),
+      '#description' => $this->t('ReliefWeb search converter.'),
+      '#default_value' => $config['converter_url'] ?? NULL,
+      '#required' => TRUE,
+    ];
+
+    $form['plugins'][$plugin_type][$plugin_id]['appname'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('API appname'),
+      '#description' => $this->t('ReliefWeb API appname.'),
+      '#default_value' => $config['appname'] ?? NULL,
+      '#required' => TRUE,
+    ];
+
+    $form['plugins'][$plugin_type][$plugin_id]['cache_enabled'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Cache enabled'),
+      '#description' => $this->t('Flag to indicate if API results should be cached.'),
+      '#default_value' => !empty($config['cache_enabled']),
+    ];
+
+    $form['plugins'][$plugin_type][$plugin_id]['cache_lifetime'] = [
+      '#type' => 'number',
+      '#title' => $this->t('Cache lifetime'),
+      '#description' => $this->t('Number of seconds to keep the results of the API in cache.'),
+      '#default_value' => $config['cache_lifetime'] ?? NULL,
+    ];
+
+    return $form;
+  }
 
   /**
-   * Cache lifetime in seconds.
-   *
-   * @var int
+   * {@inheritdoc}
    */
-  protected int $cacheLifetime;
+  public function defaultConfiguration(): array {
+    return [
+      'appname' => 'ocha-ai-chat',
+      'cache_enabled' => TRUE,
+      'cache_lifetime' => 300,
+    ];
+  }
 
   /**
    * {@inheritdoc}
@@ -68,7 +117,7 @@ class ReliefWeb extends SourcePluginBase {
     // Get the API resource and payload from the river URL.
     $request = $this->getApiRequest($url);
     if (empty($request)) {
-      $this->logger->error('Unable to retrieve API request for the ReliefWeb river URL: @url.', [
+      $this->getLogger()->error('Unable to retrieve API request for the ReliefWeb river URL: @url.', [
         '@url' => $url,
       ]);
       return $this->cacheDocuments($cache_id, []);
@@ -100,14 +149,14 @@ class ReliefWeb extends SourcePluginBase {
    */
   protected function checkRiverUrl(string $url): bool {
     if (empty($url)) {
-      $this->logger->error('Missing ReliefWeb river URL.');
+      $this->getLogger()->error('Missing ReliefWeb river URL.');
       return FALSE;
     }
 
     // Ensure the river URL is for reports.
     // @todo Handle other rivers at some point?
     if (basename(parse_url($url, \PHP_URL_PATH)) !== 'updates') {
-      $this->logger->error('URL not a ReliefWeb updates river.');
+      $this->getLogger()->error('URL not a ReliefWeb updates river.');
       return FALSE;
     }
 
@@ -182,7 +231,7 @@ class ReliefWeb extends SourcePluginBase {
     try {
       $response = $this->httpClient->get($this->getConverterUrl(), [
         'query' => [
-          'appname' => $this->config->get('reliefweb_api_appname') ?? 'ocha-ai-chat',
+          'appname' => $this->getPluginSetting('appname', 'ocha-ai-chat'),
           'search-url' => $url,
         ],
         'timeout' => $timeout,
@@ -191,7 +240,7 @@ class ReliefWeb extends SourcePluginBase {
     }
     catch (BadResponseException $exception) {
       // @todo handle timeouts and skip caching the result in that case?
-      $this->logger->error(strtr('Error @code while requesting the ReliefWeb API converter with @url: @exception', [
+      $this->getLogger()->error(strtr('Error @code while requesting the ReliefWeb API converter with @url: @exception', [
         '@code' => $exception->getResponse()?->getStatusCode(),
         '@url' => $url,
         '@exception' => $exception->getMessage(),
@@ -209,7 +258,7 @@ class ReliefWeb extends SourcePluginBase {
         return $data['output']['requests']['post'] ?? [];
       }
       catch (\Exception $exception) {
-        $this->logger->error(strtr('Unable to decode ReliefWeb API conversion data for @url', [
+        $this->getLogger()->error(strtr('Unable to decode ReliefWeb API conversion data for @url', [
           '@url' => $url,
         ]));
       }
@@ -236,7 +285,7 @@ class ReliefWeb extends SourcePluginBase {
     try {
       $response = $this->httpClient->post($url, [
         'query' => [
-          'appname' => $this->config->get('reliefweb_api_appname') ?? 'ocha-ai-chat',
+          'appname' => $this->getPluginSetting('appname', 'ocha-ai-chat'),
         ],
         'timeout' => $timeout,
         'connect_timeout' => $timeout,
@@ -245,7 +294,7 @@ class ReliefWeb extends SourcePluginBase {
     }
     catch (BadResponseException $exception) {
       // @todo handle timeouts and skip caching the result in that case?
-      $this->logger->error(strtr('Error @code while requesting the ReliefWeb API with @url: @exception', [
+      $this->getLogger()->error(strtr('Error @code while requesting the ReliefWeb API with @url: @exception', [
         '@code' => $exception->getResponse()?->getStatusCode(),
         '@url' => $url,
         '@exception' => $exception->getMessage(),
@@ -263,7 +312,7 @@ class ReliefWeb extends SourcePluginBase {
         return $data ?? [];
       }
       catch (\Exception $exception) {
-        $this->logger->error(strtr('Unable to decode ReliefWeb API data for @url', [
+        $this->getLogger()->error(strtr('Unable to decode ReliefWeb API data for @url', [
           '@url' => $url,
         ]));
       }
@@ -343,7 +392,7 @@ class ReliefWeb extends SourcePluginBase {
    */
   protected function getApiUrl(): string {
     if (!isset($this->apiUrl)) {
-      $api_url = $this->config->get('reliefweb_api_url');
+      $api_url = $this->getPluginSetting('api_url');
       if (empty($api_url) && !is_string($api_url)) {
         throw new \Exception('Missing or invalid ReliefWeb API URL');
       }
@@ -360,7 +409,7 @@ class ReliefWeb extends SourcePluginBase {
    */
   protected function getConverterUrl(): string {
     if (!isset($this->converterUrl)) {
-      $converter_url = $this->config->get('reliefweb_api_converter');
+      $converter_url = $this->getPluginSetting('converter_url');
       if (empty($converter_url) && !is_string($converter_url)) {
         throw new \Exception('Missing or invalid ReliefWeb API converter URL');
       }
@@ -376,10 +425,7 @@ class ReliefWeb extends SourcePluginBase {
    *   TRUE if caching is enabled.
    */
   protected function isCacheEnabled(): bool {
-    if (!isset($this->cacheEnabled)) {
-      $this->cacheEnabled = $this->config->get('reliefweb_api_cache_enabled') ?? TRUE;
-    }
-    return $this->cacheEnabled;
+    return $this->getPluginSetting('cache_enabled');
   }
 
   /**
@@ -389,10 +435,7 @@ class ReliefWeb extends SourcePluginBase {
    *   Cache lifetime.
    */
   protected function getCacheLifetime(): int {
-    if (!isset($this->cacheLifetime)) {
-      $this->cacheLifetime = $this->config->get('reliefweb_api_cache_lifetime') ?? 300;
-    }
-    return $this->cacheLifetime;
+    return $this->getPluginSetting('cache_lifetime');
   }
 
   /**

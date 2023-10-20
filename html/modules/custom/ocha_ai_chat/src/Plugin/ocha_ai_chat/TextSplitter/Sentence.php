@@ -2,6 +2,7 @@
 
 namespace Drupal\ocha_ai_chat\Plugin\ocha_ai_chat\TextSplitter;
 
+use Drupal\Core\Form\FormStateInterface;
 use Drupal\ocha_ai_chat\Plugin\TextSplitterPluginBase;
 
 /**
@@ -18,7 +19,10 @@ class Sentence extends TextSplitterPluginBase {
   /**
    * {@inheritdoc}
    */
-  public function splitText(string $text, int $length, int $overlap): array {
+  public function splitText(string $text): array {
+    $length = $this->getPluginSetting('length');
+    $overlap = $this->getPluginSetting('overlap');
+
     // Split the text into paragraphs and setences.
     $paragraphs = [];
 
@@ -57,6 +61,21 @@ class Sentence extends TextSplitterPluginBase {
     }
 
     return $groups;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function buildConfigurationForm(array $form, FormStateInterface $form_state): array {
+    $form = parent::buildConfigurationForm($form, $form_state);
+
+    $plugin_type = $this->getPluginType();
+    $plugin_id = $this->getPluginId();
+
+    $form['plugins'][$plugin_type][$plugin_id]['length']['#description'] = $this->t('Maximum number of sentences for one text passage.');
+    $form['plugins'][$plugin_type][$plugin_id]['overlap']['#description'] = $this->t('Maximum number of previous sentences to include in the passage to preserve context.');
+
+    return $form;
   }
 
 }
