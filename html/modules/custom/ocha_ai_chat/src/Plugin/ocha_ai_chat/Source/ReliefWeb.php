@@ -2,6 +2,7 @@
 
 namespace Drupal\ocha_ai_chat\Plugin\ocha_ai_chat\Source;
 
+use Drupal\Core\Form\FormStateInterface;
 use Drupal\ocha_ai_chat\Plugin\SourcePluginBase;
 use GuzzleHttp\Exception\BadResponseException;
 use Symfony\Component\Uid\Uuid;
@@ -30,6 +31,68 @@ class ReliefWeb extends SourcePluginBase {
    * @var string
    */
   protected string $converterUrl;
+
+  /**
+   * {@inheritdoc}
+   */
+  public function buildConfigurationForm(array $form, FormStateInterface $form_state): array {
+    $form = parent::buildConfigurationForm($form, $form_state);
+
+    $plugin_type = $this->getPluginType();
+    $plugin_id = $this->getPluginId();
+    $config = $this->getConfiguration() + $this->defaultConfiguration();
+
+    $form['plugins'][$plugin_type][$plugin_id]['api_url'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('API URL'),
+      '#description' => $this->t('ReliefWeb API URL.'),
+      '#default_value' => $config['api_url'] ?? NULL,
+      '#required' => TRUE,
+    ];
+
+    $form['plugins'][$plugin_type][$plugin_id]['converter_url'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('converter_url'),
+      '#description' => $this->t('ReliefWeb search converter.'),
+      '#default_value' => $config['converter_url'] ?? NULL,
+      '#required' => TRUE,
+    ];
+
+    $form['plugins'][$plugin_type][$plugin_id]['appname'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('API appname'),
+      '#description' => $this->t('ReliefWeb API appname.'),
+      '#default_value' => $config['appname'] ?? NULL,
+      '#required' => TRUE,
+    ];
+
+    $form['plugins'][$plugin_type][$plugin_id]['cache_enabled'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Cache enabled'),
+      '#description' => $this->t('Flag to indicate if API results should be cached.'),
+      '#default_value' => !empty($config['cache_enabled']),
+    ];
+
+    $form['plugins'][$plugin_type][$plugin_id]['cache_lifetime'] = [
+      '#type' => 'number',
+      '#title' => $this->t('Cache lifetime'),
+      '#description' => $this->t('Number of seconds to keep the results of the API in cache.'),
+      '#default_value' => $config['cache_lifetime'] ?? NULL,
+    ];
+
+    return $form;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function defaultConfiguration(): array {
+    return [
+      'appname' => 'ocha-ai-chat',
+      'cache_enabled' => TRUE,
+      'cache_lifetime' => 300,
+    ];
+  }
 
   /**
    * {@inheritdoc}
@@ -362,7 +425,7 @@ class ReliefWeb extends SourcePluginBase {
    *   TRUE if caching is enabled.
    */
   protected function isCacheEnabled(): bool {
-    return $this->getPluginSetting('cache_enabled', TRUE);
+    return $this->getPluginSetting('cache_enabled');
   }
 
   /**
@@ -372,7 +435,7 @@ class ReliefWeb extends SourcePluginBase {
    *   Cache lifetime.
    */
   protected function getCacheLifetime(): int {
-    return $this->getPluginSetting('reliefweb_api_cache_lifetime', 300);
+    return $this->getPluginSetting('cache_lifetime');
   }
 
   /**

@@ -2,6 +2,7 @@
 
 namespace Drupal\ocha_ai_chat\Plugin\ocha_ai_chat\VectorStore;
 
+use Drupal\Core\Form\FormStateInterface;
 use Drupal\ocha_ai_chat\Plugin\VectorStorePluginBase;
 use GuzzleHttp\Exception\BadResponseException;
 use Psr\Http\Message\ResponseInterface;
@@ -30,6 +31,53 @@ class Elasticsearch extends VectorStorePluginBase {
    * @var int
    */
   protected int $indexingBatchSize;
+
+  /**
+   * {@inheritdoc}
+   */
+  public function buildConfigurationForm(array $form, FormStateInterface $form_state): array {
+    $form = parent::buildConfigurationForm($form, $form_state);
+
+    $plugin_type = $this->getPluginType();
+    $plugin_id = $this->getPluginId();
+    $config = $this->getConfiguration() + $this->defaultConfiguration();
+
+    $form['plugins'][$plugin_type][$plugin_id]['url'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('URL'),
+      '#description' => $this->t('URL of the Elasticsearch cluster'),
+      '#default_value' => $config['url'] ?? NULL,
+      '#required' => TRUE,
+    ];
+
+    $form['plugins'][$plugin_type][$plugin_id]['indexing_batch_size'] = [
+      '#type' => 'number',
+      '#title' => $this->t('Indexing batch size'),
+      '#description' => $this->t('Number of documents to index at once.'),
+      '#default_value' => $config['indexing_batch_size'] ?? NULL,
+      '#required' => TRUE,
+    ];
+
+    $form['plugins'][$plugin_type][$plugin_id]['topk'] = [
+      '#type' => 'number',
+      '#title' => $this->t('TopK'),
+      '#description' => $this->t('Maximum number of nearest neighbours to retrieve when doing a similarity search.'),
+      '#default_value' => $config['topk'] ?? NULL,
+      '#required' => TRUE,
+    ];
+
+    return $form;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function defaultConfiguration(): array {
+    return [
+      'indexing_batch_size' => 10,
+      'topk' => 5,
+    ];
+  }
 
   /**
    * {@inheritdoc}

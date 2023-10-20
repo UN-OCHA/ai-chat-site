@@ -40,4 +40,12 @@ interface TextExtractorPluginInterface {
    */
   public function getPageCount(string $path): int;
 
+  /**
+   * Get supported mimetypes.
+   *
+   * @return array
+   *   List of supported mimetypes.
+   */
+  public function getSupportedMimetypes(): array;
+
 }

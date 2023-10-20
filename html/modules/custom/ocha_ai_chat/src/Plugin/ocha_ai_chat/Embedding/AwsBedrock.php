@@ -3,6 +3,7 @@
 namespace Drupal\ocha_ai_chat\Plugin\ocha_ai_chat\Embedding;
 
 use Aws\BedrockRuntime\BedrockRuntimeClient;
+use Drupal\Core\Form\FormStateInterface;
 use Drupal\ocha_ai_chat\Plugin\EmbeddingPluginBase;
 
 /**
@@ -165,7 +166,7 @@ class AwsBedrock extends EmbeddingPluginBase {
         'region'  => $this->getPluginSetting('region'),
       ];
 
-      $endpoint = $this->getPluginSetting('endpoint');
+      $endpoint = $this->getPluginSetting('endpoint', NULL, FALSE);
       if (!empty($endpoint)) {
         $options['endpoint'] = $endpoint;
       }
@@ -173,6 +174,21 @@ class AwsBedrock extends EmbeddingPluginBase {
       $this->apiClient = new BedrockRuntimeClient($options);
     }
     return $this->apiClient;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function buildConfigurationForm(array $form, FormStateInterface $form_state): array {
+    $form = parent::buildConfigurationForm($form, $form_state);
+
+    $plugin_type = $this->getPluginType();
+    $plugin_id = $this->getPluginId();
+
+    $form['plugins'][$plugin_type][$plugin_id]['endpoint']['#required'] = FALSE;
+    $form['plugins'][$plugin_type][$plugin_id]['endpoint']['#description'] = $this->t('Endpoint of the API. Leave empty to use the official one.');
+
+    return $form;
   }
 
 }

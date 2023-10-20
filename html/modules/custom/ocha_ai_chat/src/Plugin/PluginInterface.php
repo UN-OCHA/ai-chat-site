@@ -34,14 +34,6 @@ interface PluginInterface {
   public function getLogger(): LoggerInterface;
 
   /**
-   * Get the plugin settings.
-   *
-   * @return array
-   *   Plugin settings.
-   */
-  public function getPluginSettings(): array;
-
-  /**
    * Get a plugin setting.
    *
    * @param string $key

@@ -30,4 +30,11 @@ class SourcePluginManager extends PluginManagerBase implements SourcePluginManag
     $this->alterInfo('ocha_ai_chat_source_info');
   }
 
+  /**
+   * {@inheritdoc}
+   */
+  public function getPluginType(): string {
+    return 'source';
+  }
+
 }

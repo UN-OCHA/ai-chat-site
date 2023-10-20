@@ -2,6 +2,7 @@
 
 namespace Drupal\ocha_ai_chat\Services;
 
+use Drupal\Component\Utility\NestedArray;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\ImmutableConfig;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
@@ -82,14 +83,14 @@ class OchaAiChat {
   protected TextSplitterPluginManagerInterface $textSplitterPluginManager;
 
   /**
-   * Text vector store manager.
+   * Vector store manager.
    *
    * @var \Drupal\ocha_ai_chat\Plugin\VectorStorePluginManagerInterface
    */
   protected VectorStorePluginManagerInterface $vectorStorePluginManager;
 
   /**
-   * OCHA AI Chat settings.
+   * Static cache for the settings.
    *
    * @var array
    */
@@ -153,20 +154,26 @@ class OchaAiChat {
    *   Question.
    * @param string $url
    *   Document source URL.
+   * @param int $limit
+   *   Number of documents to retrieve.
    * @param bool $reset
    *   If TRUE, delete the index. This is mostly for development.
+   * @param \Drupal\ocha_ai_chat\Plugin\CompletionPluginInterface $plugin
+   *   Optional completion plugin override.
    *
    * @return string
    *   Answer.
+   *
+   * @todo return the statistics?
    */
-  public function answer(string $question, string $url, bool $reset = FALSE): string {
+  public function answer(string $question, string $url, int $limit = 10, bool $reset = FALSE, ?CompletionPluginInterface $plugin = NULL): string {
     // Stats to record the time of each operation.
     // @todo either store the stats elsewhere (log etc.) or remove.
     $stats = [];
 
     // Retrieve the source documents matching the document source URL.
     $time = microtime(TRUE);
-    ['index' => $index, 'documents' => $documents] = $this->getSourceDocuments($url);
+    ['index' => $index, 'documents' => $documents] = $this->getSourceDocuments($url, $limit);
     $stats['Get source documents'] = microtime(TRUE) - $time;
 
     // If there are no documents to query, then no need to ask the AI.
@@ -204,20 +211,16 @@ class OchaAiChat {
     }
     $stats['Get relevant passages'] = microtime(TRUE) - $time;
 
-    // Generate the prompt.
-    $context = [
-      // @todo get that from the config or settings.
-      "You are a helpful assistant. Answer the user's question concisely and exactly, using only the following information. Write complete sentences. Say you don't know if you cannot answer.",
-    ];
+    // Get the completion plugin.
+    $plugin = $plugin ?? $this->getCompletionPlugin();
 
-    foreach ($passages as $passage) {
-      $context[] = $passage['text'];
-    }
-    $context = implode("\n\n", $context);
+    // Generate the context to answer the question based on the relevant
+    // passages.
+    $context = $plugin->generateContext($question, $passages);
 
     // @todo parse the answer and enrich it with the sources.
     $time = microtime(TRUE);
-    $answer = $this->getCompletionPlugin()->answer($question, $context);
+    $answer = $plugin->answer($question, $context);
     $stats['Get answer'] = microtime(TRUE) - $time;
 
     // @todo better logging.
@@ -236,15 +239,16 @@ class OchaAiChat {
    *
    * @param string $url
    *   Document source URL.
+   * @param int $limit
+   *   Number of documents to retrieve.
    *
    * @return array
    *   Associative array with the index corresponding to the type of
    *   documents and the list of source documents for the source URL.
    */
-  protected function getSourceDocuments(string $url): array {
+  protected function getSourceDocuments(string $url, int $limit): array {
     $plugin = $this->getSourcePlugin();
 
-    $limit = $this->getSetting('source_document_limit', 10);
     $documents = $plugin->getDocuments($url, $limit);
 
     // @todo allow multiple indices.
@@ -399,7 +403,7 @@ class OchaAiChat {
     $time = microtime(TRUE);
     $pages = [];
     foreach ($page_texts as $page_number => $page_text) {
-      $pages[] = $this->processPage($page_text, $page_number);
+      $pages[] = $this->processPage($page_text, $page_number + 1);
     }
     $stats['Processing'] = microtime(TRUE) - $time;
 
@@ -455,19 +459,84 @@ class OchaAiChat {
    *   TRUE if the file type is supported.
    */
   protected function isSupportedFileType(string $mimetype): bool {
-    $plugin_ids = $this->getSetting('text_extractor_plugin_ids', ['application/pdf' => 'mupdf']);
-    return isset($plugin_ids[$mimetype]);
+    $plugin_id = $this->getSetting([
+      'plugins',
+      'text_extractor',
+      $mimetype,
+      'plugin_id',
+    ]);
+    return isset($plugin_id);
+  }
+
+  /**
+   * Get the completion plugin manager.
+   *
+   * @return \Drupal\ocha_ai_chat\Plugin\CompletionPluginManagerInterface
+   *   Completion plugin manager.
+   */
+  public function getCompletionPluginManager(): CompletionPluginManagerInterface {
+    return $this->completionPluginManager;
+  }
+
+  /**
+   * Get the embedding plugin manager.
+   *
+   * @return \Drupal\ocha_ai_chat\Plugin\EmbeddingPluginManagerInterface
+   *   Embedding plugin.
+   */
+  public function getEmbeddingPluginManager(): EmbeddingPluginManagerInterface {
+    return $this->embeddingPluginManager;
+  }
+
+  /**
+   * Get the source plugin manager.
+   *
+   * @return \Drupal\ocha_ai_chat\Plugin\SourcePluginManagerInterface
+   *   Source plugin.
+   */
+  public function getSourcePluginManager(): SourcePluginManagerInterface {
+    return $this->sourcePluginManager;
+  }
+
+  /**
+   * Get the text extractor plugin manager.
+   *
+   * @return \Drupal\ocha_ai_chat\Plugin\TextExtractorPluginManagerInterface
+   *   Text extractor plugin.
+   */
+  public function getTextExtractorPluginManager(): TextExtractorPluginManagerInterface {
+    return $this->textExtractorPluginManager;
+  }
+
+  /**
+   * Get the text splitter plugin manager.
+   *
+   * @return \Drupal\ocha_ai_chat\Plugin\TextSplitterPluginManagerInterface
+   *   Text splitter plugin.
+   */
+  public function getTextSplitterPluginManager(): TextSplitterPluginManagerInterface {
+    return $this->textSplitterPluginManager;
+  }
+
+  /**
+   * Get the vector store plugin manager.
+   *
+   * @return \Drupal\ocha_ai_chat\Plugin\VectorStorePluginManagerInterface
+   *   Vector store plugin manager.
+   */
+  protected function getVectorStorePluginManager(): VectorStorePluginManagerInterface {
+    return $this->vectorStorePluginManager;
   }
 
   /**
    * Get the completion plugin.
    *
    * @return \Drupal\ocha_ai_chat\Plugin\CompletionPluginInterface
-   *   Embedding plugin.
+   *   Completion plugin.
    */
   protected function getCompletionPlugin(): CompletionPluginInterface {
-    $plugin_id = $this->getSetting('completion_plugin_id', 'aws_bedrock');
-    return $this->completionPluginManager->getPlugin($plugin_id);
+    $plugin_id = $this->getSetting(['plugins', 'completion', 'plugin_id']);
+    return $this->getCompletionPluginManager()->getPlugin($plugin_id);
   }
 
   /**
@@ -477,8 +546,8 @@ class OchaAiChat {
    *   Embedding plugin.
    */
   protected function getEmbeddingPlugin(): EmbeddingPluginInterface {
-    $plugin_id = $this->getSetting('embedding_plugin_id', 'aws_bedrock');
-    return $this->embeddingPluginManager->getPlugin($plugin_id);
+    $plugin_id = $this->getSetting(['plugins', 'embedding', 'plugin_id']);
+    return $this->getEmbeddingPluginManager()->getPlugin($plugin_id);
   }
 
   /**
@@ -488,23 +557,24 @@ class OchaAiChat {
    *   Source plugin.
    */
   protected function getSourcePlugin(): SourcePluginInterface {
-    $plugin_id = $this->getSetting('source_plugin_id', 'reliefweb');
-    return $this->sourcePluginManager->getPlugin($plugin_id);
+    $plugin_id = $this->getSetting(['plugins', 'source', 'plugin_id']);
+    return $this->getSourcePluginManager()->getPlugin($plugin_id);
   }
 
   /**
    * Get the text extractor plugin for the given file mimetype.
    *
-   * @param string $mimetype
-   *   File mimetype.
-   *
    * @return \Drupal\ocha_ai_chat\Plugin\TextExtractorPluginInterface
    *   Text extractor plugin.
    */
   protected function getTextExtractorPlugin(string $mimetype): TextExtractorPluginInterface {
-    $plugin_ids = $this->getSetting('text_extractor_plugin_ids', ['application/pdf' => 'mupdf']);
-    $plugin_id = $plugin_ids[$mimetype] ?? '';
-    return $this->textExtractorPluginManager->getPlugin($plugin_id);
+    $plugin_id = $this->getSetting([
+      'plugins',
+      'text_extractor',
+      $mimetype,
+      'plugin_id',
+    ]);
+    return $this->getTextExtractorPluginManager()->getPlugin($plugin_id);
   }
 
   /**
@@ -514,8 +584,8 @@ class OchaAiChat {
    *   Text splitter plugin.
    */
   protected function getTextSplitterPlugin(): TextSplitterPluginInterface {
-    $plugin_id = $this->getSetting('text_splitter_plugin_id', 'sentence');
-    return $this->textSplitterPluginManager->getPlugin($plugin_id);
+    $plugin_id = $this->getSetting(['plugins', 'text_splitter', 'plugin_id']);
+    return $this->getTextSplitterPluginManager()->getPlugin($plugin_id);
   }
 
   /**
@@ -525,8 +595,8 @@ class OchaAiChat {
    *   Vector store plugin.
    */
   protected function getVectorStorePlugin(): VectorStorePluginInterface {
-    $plugin_id = $this->getSetting('vector_store_plugin_id', 'elasticsearch');
-    return $this->vectorStorePluginManager->getPlugin($plugin_id);
+    $plugin_id = $this->getSetting(['plugins', 'vector_store', 'plugin_id']);
+    return $this->getVectorStorePluginManager()->getPlugin($plugin_id);
   }
 
   /**
@@ -539,22 +609,22 @@ class OchaAiChat {
    *   List of text passages.
    */
   protected function splitText(string $text): array {
-    // @todo retrieve the plugin settings from the config.
-    $length = 2;
-    $overlap = 1;
-
-    return $this->getTextSplitterPlugin()->splitText($text, $length, $overlap);
+    return $this->getTextSplitterPlugin()->splitText($text);
   }
 
   /**
-   * Get the settings for the OCHA AI Chat.
+   * Get the default settings for the OCHA AI Chat.
    *
    * @return array
    *   The OCHA AI Chat settings.
    */
-  protected function getSettings(): array {
+  public function getSettings(): array {
     if (!isset($this->settings)) {
-      $this->settings = $this->state->get('ocha_ai_chat.settings', []);
+      $config_defaults = $this->config->get('defaults') ?? [];
+
+      $state_defaults = $this->state->get('ocha_ai_chat.default_settings', []);
+
+      $this->settings = array_replace_recursive($config_defaults, $state_defaults);
     }
     return $this->settings;
   }
@@ -562,17 +632,29 @@ class OchaAiChat {
   /**
    * Get a setting for the OCHA AI Chat.
    *
-   * @param string $name
-   *   Setting name.
+   * @param array $keys
+   *   Setting keys.
    * @param mixed $default
    *   Default.
+   * @param bool $throw_if_null
+   *   If TRUE and both the setting and default are NULL then an exception
+   *   is thrown. Use this for example for mandatory settings.
    *
    * @return mixed
-   *   Setting value.
+   *   The setting value for the keys or the provided default.
+   *
+   * @throws \Exception
+   *   Throws an exception if no setting could be found (= NULL).
    */
-  protected function getSetting(string $name, mixed $default = NULL): mixed {
+  protected function getSetting(array $keys, mixed $default = NULL, bool $throw_if_null = TRUE): mixed {
     $settings = $this->getSettings();
-    return $settings[$name] ?? $default;
+    $setting = NestedArray::getValue($settings, $keys) ?? $default;
+    if (is_null($setting) && $throw_if_null) {
+      throw new \Exception(strtr('Missing setting @keys', [
+        '@keys' => implode('.', $keys),
+      ]));
+    }
+    return $setting;
   }
 
 }

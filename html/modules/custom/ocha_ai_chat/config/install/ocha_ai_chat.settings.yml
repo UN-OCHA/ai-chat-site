@@ -1,15 +1,45 @@
-elasticsearch_url:
-elasticsearch_indexing_batch_size:
-openai_embedding_url:
-openai_embedding_model:
-openai_embedding_dimensions:
-openai_embedding_batch_size:
-openai_embedding_max_tokens:
-openai_completion_url:
-openai_completion_model:
-reliefweb_api_url: https://api.reliefweb.int/v1
-reliefweb_api_appname: unocha.org
-reliefweb_api_cache_enabled: true
-reliefweb_api_cache_lifetime: 300
-reliefweb_api_converter: https://reliefweb.int/search/converter/json
-mutool: /usr/bin/mutool
+plugins:
+  completion:
+    aws_bedrock:
+      prompt_template: |-
+        SYSTEM: You are a helpful assistant. Answer the user's question concisely and exactly, using only the following information. Write complete sentences. Say you don't know if you cannot answer.
+
+        {{ context }}
+
+        QUESTION: {{ question }}
+
+        ANSWER:
+    azure_openai:
+      prompt_template: |-
+        You are a helpful assistant. Answer the user's question concisely and exactly, using only the following information. Write complete sentences. Say you don't know if you cannot answer.
+
+        {{ context }}
+  source:
+    reliefweb:
+      api_url: https://api.reliefweb.int/v1
+      converter_url: https://reliefweb.int/search/converter/json
+      appname: ocha-ai-chat
+      cache_enabled: TRUE
+      cache_lifetime: 600
+  text_extractor:
+    mupdf:
+      mutool: /usr/bin/mutool
+  text_splitter:
+    sentence:
+      length: 4
+      overlap: 2
+defaults:
+  plugins:
+    completion:
+      plugin_id: aws_bedrock
+    embedding:
+      plugin_id: aws_bedrock
+    source:
+      plugin_id: reliefweb
+    text_extractor:
+      'application/pdf':
+        plugin_id: 'mupdf'
+    text_splitter:
+      plugin_id: sentence
+    vector_store:
+      plugin_id: elasticsearch

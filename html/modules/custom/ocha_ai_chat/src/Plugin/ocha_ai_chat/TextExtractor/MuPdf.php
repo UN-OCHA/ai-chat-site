@@ -2,6 +2,7 @@
 
 namespace Drupal\ocha_ai_chat\Plugin\ocha_ai_chat\TextExtractor;
 
+use Drupal\Core\Form\FormStateInterface;
 use Drupal\ocha_ai_chat\Plugin\TextExtractorPluginBase;
 
 /**
@@ -27,6 +28,27 @@ class MuPdf extends TextExtractorPluginBase {
    * @var string
    */
   protected $mutool;
+
+  /**
+   * {@inheritdoc}
+   */
+  public function buildConfigurationForm(array $form, FormStateInterface $form_state): array {
+    $form = parent::buildConfigurationForm($form, $form_state);
+
+    $plugin_type = $this->getPluginType();
+    $plugin_id = $this->getPluginId();
+    $config = $this->getConfiguration() + $this->defaultConfiguration();
+
+    $form['plugins'][$plugin_type][$plugin_id]['mutool'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Mutool'),
+      '#description' => $this->t('Path to the mutool executable'),
+      '#default_value' => $config['mutool'] ?? NULL,
+      '#required' => TRUE,
+    ];
+
+    return $form;
+  }
 
   /**
    * {@inheritdoc}
@@ -70,6 +92,13 @@ class MuPdf extends TextExtractorPluginBase {
       return intval($matches['count']);
     }
     return 1;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getSupportedMimetypes(): array {
+    return ['application/pdf'];
   }
 
   /**

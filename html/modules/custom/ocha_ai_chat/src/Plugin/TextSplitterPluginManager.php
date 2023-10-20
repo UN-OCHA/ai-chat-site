@@ -30,4 +30,11 @@ class TextSplitterPluginManager extends PluginManagerBase implements TextSplitte
     $this->alterInfo('ocha_ai_chat_text_splitter_info');
   }
 
+  /**
+   * {@inheritdoc}
+   */
+  public function getPluginType(): string {
+    return 'text_splitter';
+  }
+
 }

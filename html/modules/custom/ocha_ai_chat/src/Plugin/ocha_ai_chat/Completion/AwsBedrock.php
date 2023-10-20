@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\ocha_ai_chat\Plugin\ocha_ai_chat\Completion;
 
 use Aws\BedrockRuntime\BedrockRuntimeClient;
+use Drupal\Core\Form\FormStateInterface;
 use Drupal\ocha_ai_chat\Plugin\CompletionPluginBase;
 
 /**
@@ -34,10 +35,9 @@ class AwsBedrock extends CompletionPluginBase {
     }
 
     // @todo review what is a good template for AWS titan model.
-    $prompt = implode("\n\n", [
-      'SYSTEM: ' . $context,
-      'QUESTION: ' . $question,
-      'ANSWER: ',
+    $prompt = strtr($this->getPluginSetting('prompt_template'), [
+      '{{ context }}' => $context,
+      '{{ question }}' => $question,
     ]);
 
     $payload = [
@@ -94,7 +94,7 @@ class AwsBedrock extends CompletionPluginBase {
         'region'  => $this->getPluginSetting('region'),
       ];
 
-      $endpoint = $this->getPluginSetting('endpoint');
+      $endpoint = $this->getPluginSetting('endpoint', NULL, FALSE);
       if (!empty($endpoint)) {
         $options['endpoint'] = $endpoint;
       }
@@ -102,6 +102,21 @@ class AwsBedrock extends CompletionPluginBase {
       $this->apiClient = new BedrockRuntimeClient($options);
     }
     return $this->apiClient;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function buildConfigurationForm(array $form, FormStateInterface $form_state): array {
+    $form = parent::buildConfigurationForm($form, $form_state);
+
+    $plugin_type = $this->getPluginType();
+    $plugin_id = $this->getPluginId();
+
+    $form['plugins'][$plugin_type][$plugin_id]['endpoint']['#required'] = FALSE;
+    $form['plugins'][$plugin_type][$plugin_id]['endpoint']['#description'] = $this->t('Endpoint of the API. Leave empty to use the official one.');
+
+    return $form;
   }
 
 }
