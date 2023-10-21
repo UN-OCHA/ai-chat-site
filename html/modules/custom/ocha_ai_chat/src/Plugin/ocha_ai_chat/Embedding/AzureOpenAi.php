@@ -106,7 +106,7 @@ class AzureOpenAi extends EmbeddingPluginBase {
       $this->getLogger()->error(strtr('Embedding request failed with error: @error.', [
         '@error' => $exception->getMessage(),
       ]));
-      return [];
+      throw $exception;
     }
 
     try {
@@ -116,7 +116,7 @@ class AzureOpenAi extends EmbeddingPluginBase {
       $this->getLogger()->error(strtr('Unable to retrieve embedding result data: @error.', [
         '@error' => $exception->getMessage(),
       ]));
-      return [];
+      throw $exception;
     }
 
     return array_map(function ($item) {

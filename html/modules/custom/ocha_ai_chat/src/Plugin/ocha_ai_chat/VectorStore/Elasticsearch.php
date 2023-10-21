@@ -178,7 +178,14 @@ class Elasticsearch extends VectorStorePluginBase {
       ],
     ];
 
-    return !is_null($this->request('PUT', $index, $payload));
+    $response = $this->request('PUT', $index, $payload);
+    if (is_null($response)) {
+      $this->getLogger()->error(strtr('Unable to create elasticsearch index: @index', [
+        '@index' => $index,
+      ]));
+      return FALSE;
+    }
+    return NULL;
   }
 
   /**
@@ -209,9 +216,6 @@ class Elasticsearch extends VectorStorePluginBase {
 
     // Ensure the index exist.
     if (!$this->createIndex($index, $dimensions)) {
-      $this->getLogger()->error(strtr('Unable to create elasticsearch index: @index', [
-        '@index' => $index,
-      ]));
       return FALSE;
     }
 
@@ -232,6 +236,38 @@ class Elasticsearch extends VectorStorePluginBase {
       if (is_null($response)) {
         return FALSE;
       }
+    }
+
+    return TRUE;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function indexDocument(string $index, array $document, int $dimensions): bool {
+    // Skip if there is nothing to index.
+    if (empty($document)) {
+      return TRUE;
+    }
+
+    // Ensure the index exist.
+    if (!$this->createIndex($index, $dimensions)) {
+      return FALSE;
+    }
+
+    $payload = [
+      'doc' => $document,
+      'doc_as_upsert' => TRUE,
+    ];
+
+    // Create or replace the document.
+    $response = $this->request('POST', $index . '/_update/' . $document['id'] . '?refresh=true', $payload);
+    if (is_null($response)) {
+      $this->getLogger()->error(strtr('Unable to index document @id (@url)', [
+        '@id' => $document['id'],
+        '@url' => $document['url'] ?? '-',
+      ]));
+      return FALSE;
     }
 
     return TRUE;
