@@ -76,7 +76,14 @@ class AzureOpenAi extends EmbeddingPluginBase {
       return [];
     }
 
-    return $this->requestEmbeddings([$text])[0] ?? [];
+    try {
+      $embedding = $this->requestEmbeddings([$text])[0] ?? [];
+    }
+    catch (\Exception $exception) {
+      return [];
+    }
+
+    return $embedding;
   }
 
   /**

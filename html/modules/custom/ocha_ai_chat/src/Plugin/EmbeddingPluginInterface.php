@@ -29,10 +29,7 @@ interface EmbeddingPluginInterface {
    *   Text.
    *
    * @return array
-   *   Embedding for the text.
-   *
-   * @throws \Exception
-   *   Throw an exception if the generation of the embeddding fails.
+   *   Embedding for the text or empty array in case of failure.
    */
   public function generateEmbedding(string $text): array;
 

@@ -185,7 +185,7 @@ class Elasticsearch extends VectorStorePluginBase {
       ]));
       return FALSE;
     }
-    return NULL;
+    return TRUE;
   }
 
   /**
@@ -309,7 +309,7 @@ class Elasticsearch extends VectorStorePluginBase {
   /**
    * {@inheritdoc}
    */
-  public function getRelevantPassages(string $index, array $ids, string $query_text, array $query_embedding): array {
+  public function getRelevantPassages(string $index, array $ids, string $query_text, array $query_embedding, int $limit = 5): array {
     if (!$this->indexExists($index)) {
       return [];
     }
@@ -355,6 +355,7 @@ class Elasticsearch extends VectorStorePluginBase {
               'inner_hits' => [
                 '_source' => [
                   'contents.pages.passages.text',
+                  'contents.pages.passages.embedding',
                 ],
                 'size' => $topk,
               ],
@@ -373,6 +374,7 @@ class Elasticsearch extends VectorStorePluginBase {
       foreach ($data['hits']['hits'] ?? [] as $hit) {
         $id = $hit['_source']['id'];
         $title = $hit['_source']['title'];
+        $url = $hit['_source']['url'];
         $contents = $hit['_source']['contents'];
 
         foreach ($hit['inner_hits']['contents.pages.passages']['hits']['hits'] ?? [] as $inner_hit) {
@@ -381,10 +383,13 @@ class Elasticsearch extends VectorStorePluginBase {
           $source = [
             'id' => $id,
             'title' => $title,
-            'url' => $content['url'],
+            'url' => $url,
           ];
           if ($content['type'] === 'file') {
-            $source['page'] = $inner_hit['_nested']['_nested']['offset'] + 1;
+            $source['attachment'] = [
+              'url' => $content['url'],
+              'page' => $inner_hit['_nested']['_nested']['offset'] + 1,
+            ];
           }
 
           $text = $inner_hit['_source']['text'];
@@ -392,6 +397,7 @@ class Elasticsearch extends VectorStorePluginBase {
           // Ensure uniqueness by using the text as key.
           $passages[mb_strtolower($text)] = [
             'text' => $text,
+            'embedding' => $inner_hit['_source']['embedding'],
             'score' => $inner_hit['_score'],
             'source' => $source,
           ];
@@ -406,7 +412,7 @@ class Elasticsearch extends VectorStorePluginBase {
       });
 
       // Limit the number of passages.
-      $passages = array_slice($passages, 0, $topk);
+      $passages = array_slice($passages, 0, $limit);
       return $passages;
     }
 

@@ -51,7 +51,14 @@ class AwsBedrock extends EmbeddingPluginBase {
       return [];
     }
 
-    return $this->requestEmbedding($text);
+    try {
+      $embedding = $this->requestEmbedding($text);
+    }
+    catch (\Exception $exception) {
+      return [];
+    }
+
+    return $embedding;
   }
 
   /**

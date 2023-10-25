@@ -1,0 +1,9 @@
+ocha_ai_chat_chat_form:
+  css:
+    theme:
+      css/ocha_ai_chat_chat_form.css: {}
+
+ocha_ai_chat_logs_form:
+  css:
+    theme:
+      css/ocha_ai_chat_logs_form.css: {}
