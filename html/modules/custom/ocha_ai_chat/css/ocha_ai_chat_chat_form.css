@@ -1,0 +1,36 @@
+.ocha-ai-chat-chat-form dl {
+  padding: 12px;
+  border: 1px solid black;
+  border-radius: 6px;
+}
+.ocha-ai-chat-chat-form dt {
+  font-weight: bold;
+}
+
+.ocha-ai-chat-chat-form details {
+  display: block;
+  padding: 12px;
+  border: 1px solid #ddd;
+  border-radius: 3px;
+  background-color: #fff;
+  box-shadow: rgba(0, 0, 0, 0.1) 0 2px 4px 0;
+}
+.ocha-ai-chat-chat-form summary {
+  font-weight: bold;
+}
+.ocha-ai-chat-chat-form details[open] summary {
+  margin-bottom: 12px;
+}
+
+.ocha-ai-chat-chat-form .ocha-ai-chat-reference {
+  display: inline;
+  margin: 0;
+  padding: 0;
+  list-style-type: none;
+}
+.ocha-ai-chat-chat-form .ocha-ai-chat-reference li {
+  display: inline;
+}
+.ocha-ai-chat-chat-form .ocha-ai-chat-reference li:not(:last-child)::after {
+  content: ", ";
+}

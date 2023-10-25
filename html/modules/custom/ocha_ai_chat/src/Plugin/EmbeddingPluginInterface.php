@@ -16,6 +16,9 @@ interface EmbeddingPluginInterface {
    * @return array
    *   List of embeddings. Each contains a text property with the original text
    *   and an embedding property with the vector.
+   *
+   * @throws \Exception
+   *   Throw an exception if the generation of the embedddings fails.
    */
   public function generateEmbeddings(array $texts): array;
 
@@ -26,7 +29,7 @@ interface EmbeddingPluginInterface {
    *   Text.
    *
    * @return array
-   *   Embedding for the text.
+   *   Embedding for the text or empty array in case of failure.
    */
   public function generateEmbedding(string $text): array;
 

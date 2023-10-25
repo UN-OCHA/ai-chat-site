@@ -26,3 +26,13 @@ cha_ai_chat.default_settings_form:
   requirements:
     _user_is_logged_in: 'TRUE'
     _permission: manage ocha ai chat default settings
+cha_ai_chat.logs_form:
+  path: '/admin/ocha/chat/logs'
+  defaults:
+    _form: '\Drupal\ocha_ai_chat\Form\OchaAiChatLogsForm'
+    _title: 'OCHA AI chat logs'
+  options:
+    _admin_route: TRUE
+  requirements:
+    _user_is_logged_in: 'TRUE'
+    _permission: view ocha ai chat logs

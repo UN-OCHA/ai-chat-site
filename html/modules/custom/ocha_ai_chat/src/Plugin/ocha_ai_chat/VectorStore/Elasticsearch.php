@@ -178,7 +178,14 @@ class Elasticsearch extends VectorStorePluginBase {
       ],
     ];
 
-    return !is_null($this->request('PUT', $index, $payload));
+    $response = $this->request('PUT', $index, $payload);
+    if (is_null($response)) {
+      $this->getLogger()->error(strtr('Unable to create elasticsearch index: @index', [
+        '@index' => $index,
+      ]));
+      return FALSE;
+    }
+    return TRUE;
   }
 
   /**
@@ -209,9 +216,6 @@ class Elasticsearch extends VectorStorePluginBase {
 
     // Ensure the index exist.
     if (!$this->createIndex($index, $dimensions)) {
-      $this->getLogger()->error(strtr('Unable to create elasticsearch index: @index', [
-        '@index' => $index,
-      ]));
       return FALSE;
     }
 
@@ -232,6 +236,38 @@ class Elasticsearch extends VectorStorePluginBase {
       if (is_null($response)) {
         return FALSE;
       }
+    }
+
+    return TRUE;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function indexDocument(string $index, array $document, int $dimensions): bool {
+    // Skip if there is nothing to index.
+    if (empty($document)) {
+      return TRUE;
+    }
+
+    // Ensure the index exist.
+    if (!$this->createIndex($index, $dimensions)) {
+      return FALSE;
+    }
+
+    $payload = [
+      'doc' => $document,
+      'doc_as_upsert' => TRUE,
+    ];
+
+    // Create or replace the document.
+    $response = $this->request('POST', $index . '/_update/' . $document['id'] . '?refresh=true', $payload);
+    if (is_null($response)) {
+      $this->getLogger()->error(strtr('Unable to index document @id (@url)', [
+        '@id' => $document['id'],
+        '@url' => $document['url'] ?? '-',
+      ]));
+      return FALSE;
     }
 
     return TRUE;
@@ -273,7 +309,7 @@ class Elasticsearch extends VectorStorePluginBase {
   /**
    * {@inheritdoc}
    */
-  public function getRelevantPassages(string $index, array $ids, string $query_text, array $query_embedding): array {
+  public function getRelevantPassages(string $index, array $ids, string $query_text, array $query_embedding, int $limit = 5): array {
     if (!$this->indexExists($index)) {
       return [];
     }
@@ -319,6 +355,7 @@ class Elasticsearch extends VectorStorePluginBase {
               'inner_hits' => [
                 '_source' => [
                   'contents.pages.passages.text',
+                  'contents.pages.passages.embedding',
                 ],
                 'size' => $topk,
               ],
@@ -337,6 +374,7 @@ class Elasticsearch extends VectorStorePluginBase {
       foreach ($data['hits']['hits'] ?? [] as $hit) {
         $id = $hit['_source']['id'];
         $title = $hit['_source']['title'];
+        $url = $hit['_source']['url'];
         $contents = $hit['_source']['contents'];
 
         foreach ($hit['inner_hits']['contents.pages.passages']['hits']['hits'] ?? [] as $inner_hit) {
@@ -345,10 +383,13 @@ class Elasticsearch extends VectorStorePluginBase {
           $source = [
             'id' => $id,
             'title' => $title,
-            'url' => $content['url'],
+            'url' => $url,
           ];
           if ($content['type'] === 'file') {
-            $source['page'] = $inner_hit['_nested']['_nested']['offset'] + 1;
+            $source['attachment'] = [
+              'url' => $content['url'],
+              'page' => $inner_hit['_nested']['_nested']['offset'] + 1,
+            ];
           }
 
           $text = $inner_hit['_source']['text'];
@@ -356,6 +397,7 @@ class Elasticsearch extends VectorStorePluginBase {
           // Ensure uniqueness by using the text as key.
           $passages[mb_strtolower($text)] = [
             'text' => $text,
+            'embedding' => $inner_hit['_source']['embedding'],
             'score' => $inner_hit['_score'],
             'source' => $source,
           ];
@@ -370,7 +412,7 @@ class Elasticsearch extends VectorStorePluginBase {
       });
 
       // Limit the number of passages.
-      $passages = array_slice($passages, 0, $topk);
+      $passages = array_slice($passages, 0, $limit);
       return $passages;
     }
 

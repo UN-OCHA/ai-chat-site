@@ -88,10 +88,12 @@ interface VectorStorePluginInterface {
    *   Text of the query.
    * @param array $query_embedding
    *   Embedding for the text query.
+   * @param int $limit
+   *   Maximum number of relevant passages to return.
    *
    * @return array
    *   List of documents and their text passages relevant to the query.
    */
-  public function getRelevantPassages(string $index, array $ids, string $query_text, array $query_embedding): array;
+  public function getRelevantPassages(string $index, array $ids, string $query_text, array $query_embedding, int $limit = 5): array;
 
 }

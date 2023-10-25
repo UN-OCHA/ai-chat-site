@@ -33,36 +33,13 @@ class AwsBedrock extends EmbeddingPluginBase {
       return [];
     }
 
-    // Maximum number of embeddings to request at once.
-    $batch_size = $this->getPluginSetting('batch_size');
-    // Maximum number of input tokens accepted by the model (with a margin).
-    $max_tokens = $this->getPluginSetting('max_tokens') - 30;
-
-    // We batch the generation by passing several texts at once as long as their
-    // size doesn't exceed the max number of input tokens.
-    $accumulator = [];
+    // @todo the AWS Bedrock embedding API doesn't support generating embeddings
+    // for several texts at once so we need to call the API for each request.
+    // Investigate using parallel requests (check quota, rate limits etc.).
     $embeddings = [];
-    foreach ($texts as $index => $text) {
-      $token_count = $this->estimateTokenCount($text);
-      if (
-        count($accumulator) < $batch_size &&
-        array_sum($accumulator) + $token_count < $max_tokens
-      ) {
-        $accumulator[$index] = $token_count;
-      }
-      else {
-        $batch = array_values(array_intersect_key($texts, $accumulator));
-        $embeddings = array_merge($embeddings, $this->requestEmbeddings($batch));
-        $accumulator = [$index => $token_count];
-      }
+    foreach ($texts as $text) {
+      $embeddings[] = $this->requestEmbedding($text);
     }
-
-    // Process the leftover from the loop if any.
-    if (!empty($accumulator)) {
-      $batch = array_values(array_intersect_key($texts, $accumulator));
-      $embeddings = array_merge($embeddings, $this->requestEmbeddings($batch));
-    }
-
     return $embeddings;
   }
 
@@ -74,26 +51,14 @@ class AwsBedrock extends EmbeddingPluginBase {
       return [];
     }
 
-    return $this->requestEmbeddings([$text])[0] ?? [];
-  }
-
-  /**
-   * Perform a request against the API to get the embeddings for the texts.
-   *
-   * @param array $texts
-   *   List of texts.
-   *
-   * @return array
-   *   List of embeddings for the texts.
-   */
-  protected function requestEmbeddings(array $texts): array {
-    // Bedrock doesn't seem to support generating multiple embeddings at once
-    // so we need to perform individual requests for each text.
-    $embeddings = [];
-    foreach ($texts as $text) {
-      $embeddings[] = $this->requestEmbedding($text);
+    try {
+      $embedding = $this->requestEmbedding($text);
     }
-    return $embeddings;
+    catch (\Exception $exception) {
+      return [];
+    }
+
+    return $embedding;
   }
 
   /**
@@ -104,8 +69,15 @@ class AwsBedrock extends EmbeddingPluginBase {
    *
    * @return array
    *   Embedding for the text.
+   *
+   * @throws \Exception
+   *   Throw an exception if the generation of the embeddding fails.
    */
   protected function requestEmbedding(string $text): array {
+    if (empty($text)) {
+      return [];
+    }
+
     $payload = [
       'accept' => 'application/json',
       'body' => json_encode([
@@ -123,7 +95,7 @@ class AwsBedrock extends EmbeddingPluginBase {
       $this->getLogger()->error(strtr('Embedding request failed with error: @error.', [
         '@error' => $exception->getMessage(),
       ]));
-      return [];
+      throw $exception;
     }
 
     try {
@@ -131,7 +103,7 @@ class AwsBedrock extends EmbeddingPluginBase {
     }
     catch (\Exception $exception) {
       $this->getLogger()->error('Unable to decode embedding response.');
-      return [];
+      throw $exception;
     }
 
     return $data['embedding'];

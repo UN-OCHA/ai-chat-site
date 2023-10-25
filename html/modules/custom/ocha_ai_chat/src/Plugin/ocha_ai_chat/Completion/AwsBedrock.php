@@ -37,6 +37,7 @@ class AwsBedrock extends CompletionPluginBase {
 
     // @todo review what is a good template for AWS titan model.
     $prompt = strtr($this->getPluginSetting('prompt_template'), [
+      "\r" => '',
       '{{ context }}' => $context,
       '{{ question }}' => $question,
     ]);
