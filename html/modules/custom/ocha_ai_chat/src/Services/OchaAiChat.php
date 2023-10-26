@@ -562,7 +562,7 @@ class OchaAiChat {
         $stats['extraction'] = 0 - $time + ($time = microtime(TRUE));
 
         // Process each page.
-        if (!empty($pages_texts)) {
+        if (!empty($page_texts)) {
           $pages = [];
           foreach ($page_texts as $page_number => $page_text) {
             $pages[] = $this->processPage($page_text, $page_number + 1);
