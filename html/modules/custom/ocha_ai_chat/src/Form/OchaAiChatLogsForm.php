@@ -123,7 +123,7 @@ class OchaAiChatLogsForm extends FormBase {
     $header = [
       'timestamp' => [
         'data' => $this->t('Timestamp'),
-        'specifier' => 'timestamp',
+        'field' => 'timestamp',
         'sort' => 'desc',
       ],
       'source' => [
