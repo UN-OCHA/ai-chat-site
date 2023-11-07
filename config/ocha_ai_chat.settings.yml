@@ -10,8 +10,15 @@ plugins:
       api_key: REPLACE_WITH_KEY
       api_secret: REPLACE_WITH_SECRET
       max_tokens: 512
-      prompt_template: "SYSTEM: You are a helpful assistant. Answer the user's question concisely and exactly, using only the following information. Write complete sentences. Say you don't know if you cannot answer.\n\n{{ context }}\n\nQUESTION: {{ question }}\n\nANSWER:"
-      role_arn:
+      prompt_template: |-
+        SYSTEM: You are a helpful assistant. Answer the user's question concisely and exactly, using only the following information. Write complete sentences. Say you don't know if you cannot answer.
+
+        {{ context }}
+
+        QUESTION: {{ question }}
+
+        ANSWER:
+      role_arn: null
     azure_openai:
       model: gpt-3.5-turbo
       endpoint: REPLACE_WITH_ENDPOINT
@@ -19,7 +26,10 @@ plugins:
       region: REPLACE_WITH_REGION
       api_key: REPLACE_WITH_KEY
       max_tokens: 512
-      prompt_template: "You are a helpful assistant. Answer the user's question concisely and exactly, using only the following information. Write complete sentences. Say you don't know if you cannot answer.\n\n{{ context }}"
+      prompt_template: |-
+        You are a helpful assistant. Answer the user's question concisely and exactly, using only the following information. Write complete sentences. Say you don't know if you cannot answer.
+
+        {{ context }}
   embedding:
     aws_bedrock:
       model: amazon.titan-embed-text-v1
@@ -31,7 +41,7 @@ plugins:
       batch_size: 1
       dimensions: 1536
       max_tokens: 256
-      role_arn:
+      role_arn: null
     azure_openai:
       model: text-embedding-ada-002
       endpoint: REPLACE_WITH_ENDPOINT

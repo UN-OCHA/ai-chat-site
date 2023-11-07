@@ -1,0 +1,12 @@
+uuid: 76f8f446-9e4b-4222-a4a2-23ee6c33941b
+langcode: en
+status: true
+dependencies:
+  module:
+    - ocha_ai_chat
+id: tester
+label: Tester
+weight: 4
+is_admin: null
+permissions:
+  - 'access ocha ai chat'

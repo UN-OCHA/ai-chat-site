@@ -1,0 +1,20 @@
+uuid: 457d5d71-d7b0-4d85-ba51-c2b438e6327f
+langcode: en
+status: true
+dependencies:
+  module:
+    - paragraphs
+    - system
+id: paragraph.field_menu
+field_name: field_menu
+entity_type: paragraph
+type: entity_reference
+settings:
+  target_type: menu
+module: core
+locked: false
+cardinality: 1
+translatable: true
+indexes: {  }
+persist_with_no_fields: false
+custom_storage: false

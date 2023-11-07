@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "7e22467116ba920a699ad8996d7d8c76",
+    "content-hash": "9048893017b4e62ad7674af3fcf01fcf",
     "packages": [
         {
             "name": "asm89/stack-cors",
@@ -3808,6 +3808,54 @@
             "support": {
                 "source": "https://git.drupalcode.org/project/memcache",
                 "issues": "https://www.drupal.org/project/issues/memcache"
+            }
+        },
+        {
+            "name": "drupal/menu_reference_render",
+            "version": "2.0.0",
+            "source": {
+                "type": "git",
+                "url": "https://git.drupalcode.org/project/menu_reference_render.git",
+                "reference": "8.x-2.0"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://ftp.drupal.org/files/projects/menu_reference_render-8.x-2.0.zip",
+                "reference": "8.x-2.0",
+                "shasum": "d933fbf68899bd82c1a5519f703815bf884d937c"
+            },
+            "require": {
+                "drupal/core": "^8 || ^9 || ^10"
+            },
+            "type": "drupal-module",
+            "extra": {
+                "drupal": {
+                    "version": "8.x-2.0",
+                    "datestamp": "1699306874",
+                    "security-coverage": {
+                        "status": "not-covered",
+                        "message": "Project has not opted into security advisory coverage!"
+                    }
+                }
+            },
+            "notification-url": "https://packages.drupal.org/8/downloads",
+            "license": [
+                "GPL-2.0+"
+            ],
+            "authors": [
+                {
+                    "name": "semjuel",
+                    "homepage": "https://www.drupal.org/user/2426534"
+                }
+            ],
+            "description": "This module adds new field formatter plugin - Rendered menu. It allows to render field type Entity reference -> Menu as a standard Drupal menu.",
+            "homepage": "https://www.drupal.org/project/menu_reference_render",
+            "keywords": [
+                "Drupal"
+            ],
+            "support": {
+                "source": "http://cgit.drupalcode.org/menu_reference_render",
+                "issues": "https://www.drupal.org/project/issues/menu_reference_render"
             }
         },
         {
@@ -14859,5 +14907,5 @@
         "php": ">=8.2"
     },
     "platform-dev": [],
-    "plugin-api-version": "2.3.0"
+    "plugin-api-version": "2.6.0"
 }
