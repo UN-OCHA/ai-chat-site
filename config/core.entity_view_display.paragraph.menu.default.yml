@@ -1,0 +1,32 @@
+uuid: b3745bc5-f785-4fba-afe5-b79a7795b684
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.field.paragraph.menu.field_menu
+    - field.field.paragraph.menu.field_title
+    - paragraphs.paragraphs_type.menu
+  module:
+    - menu_reference_render
+id: paragraph.menu.default
+targetEntityType: paragraph
+bundle: menu
+mode: default
+content:
+  field_menu:
+    type: menu_reference_render
+    label: hidden
+    settings:
+      expand_all_items: false
+    third_party_settings: {  }
+    weight: 1
+    region: content
+  field_title:
+    type: string
+    label: hidden
+    settings:
+      link_to_entity: false
+    third_party_settings: {  }
+    weight: 0
+    region: content
+hidden: {  }
