@@ -41,6 +41,7 @@
         "drupal/layout_paragraphs": "^2.0",
         "drupal/maintenance200": "^1.1",
         "drupal/memcache": "^2.5",
+        "drupal/menu_reference_render": "^2.0",
         "drupal/metatag": "^2.0",
         "drupal/paragraphs": "^1.16",
         "drupal/pathauto": "^1.8",
