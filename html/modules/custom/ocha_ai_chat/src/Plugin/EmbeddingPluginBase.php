@@ -72,13 +72,6 @@ abstract class EmbeddingPluginBase extends PluginBase implements EmbeddingPlugin
       '#required' => TRUE,
     ];
 
-    $form['plugins'][$plugin_type][$plugin_id]['api_secret'] = [
-      '#type' => 'textfield',
-      '#title' => $this->t('API secret'),
-      '#description' => $this->t('Optional secret to access the API.'),
-      '#default_value' => $config['api_secret'] ?? NULL,
-    ];
-
     $form['plugins'][$plugin_type][$plugin_id]['batch_size'] = [
       '#type' => 'number',
       '#title' => $this->t('batch_size'),
@@ -104,6 +97,13 @@ abstract class EmbeddingPluginBase extends PluginBase implements EmbeddingPlugin
     ];
 
     return $form;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getModelName(): string {
+    return $this->getPluginSetting('model', '');
   }
 
 }

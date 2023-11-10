@@ -91,9 +91,14 @@ abstract class CompletionPluginBase extends PluginBase implements CompletionPlug
    */
   public function generateContext(string $question, array $passages): string {
     $context = [];
+
     foreach ($passages as $passage) {
-      $context[] = $passage['text'];
+      $context[] = trim($passage['text']);
+      if (isset($passage['reference'])) {
+        $context[] = 'Source: ' . $passage['reference'];
+      }
     }
+
     return implode("\n\n", $context);
   }
 

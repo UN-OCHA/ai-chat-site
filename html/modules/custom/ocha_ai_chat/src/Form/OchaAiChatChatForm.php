@@ -142,7 +142,7 @@ class OchaAiChatChatForm extends FormBase {
     foreach (json_decode($history, TRUE) ?? [] as $index => $record) {
       $form['chat'][$index] = [
         '#type' => 'inline_template',
-        '#template' => '<dl><dt>Question</dt><dd>{{ question }}</dd><dt>Answer</dt><dd>{{ answer }}</dd><dt>References</dt><dd>{{ references }}</dd></dl>',
+        '#template' => '<dl><dt>Question</dt><dd>{{ question }}</dd><dt>Answer</dt><dd>{{ answer }}</dd>{% if references %}<dt>References</dt><dd>{{ references }}</dd>{% endif %}</dl>',
         '#context' => [
           'question' => $record['question'],
           'answer' => $record['answer'],
@@ -240,6 +240,10 @@ class OchaAiChatChatForm extends FormBase {
    *   Render array.
    */
   protected function formatReferences(array $references): array {
+    if (empty($references)) {
+      return [];
+    }
+
     $link_options = [
       'attributes' => [
         'rel' => 'noreferrer noopener',

@@ -41,4 +41,12 @@ interface EmbeddingPluginInterface {
    */
   public function getDimensions(): int;
 
+  /**
+   * Get the model name.
+   *
+   * @return string
+   *   Model name.
+   */
+  public function getModelName(): string;
+
 }

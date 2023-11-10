@@ -362,10 +362,12 @@ class ReliefWeb extends SourcePluginBase {
 
       $title = trim($fields['title']);
       $body = trim($fields['body'] ?? '');
-      $url = $fields['url_alias'];
 
       $document['contents'][] = [
-        'url' => $url,
+        // @todo might not be so great to use the same id as the parent document
+        // maybe use a prefix.
+        'id' => $id,
+        'url' => $fields['url_alias'] ?? $fields['url'],
         'type' => 'markdown',
         'content' => "# $title\n\n$body",
       ];
@@ -373,6 +375,7 @@ class ReliefWeb extends SourcePluginBase {
       // Attachments with their URL so they can be downloaded.
       foreach ($fields['file'] ?? [] as $file) {
         $document['contents'][] = [
+          'id' => $this->getUuidFromUrl($file['url']),
           'url' => $file['url'],
           'type' => 'file',
           'mimetype' => $file['mimetype'],
