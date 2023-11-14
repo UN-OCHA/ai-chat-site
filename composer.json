@@ -57,6 +57,7 @@
         "oomphinc/composer-installers-extender": "^2.0",
         "openai-php/client": "^0.7.3",
         "orakili/composer-drupal-info-file-patch-helper": "^1",
+        "pear/text_languagedetect": "^1.0",
         "symfony/uid": "^6.3",
         "unocha/common_design": "^9.1"
     },

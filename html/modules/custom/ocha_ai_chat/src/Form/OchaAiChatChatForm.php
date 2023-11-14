@@ -2,6 +2,8 @@
 
 namespace Drupal\ocha_ai_chat\Form;
 
+use Drupal\Core\Ajax\AjaxResponse;
+use Drupal\Core\Ajax\MessageCommand;
 use Drupal\Core\Form\FormBase;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Session\AccountProxyInterface;
@@ -73,8 +75,22 @@ class OchaAiChatChatForm extends FormBase {
   public function buildForm(array $form, FormStateInterface $form_state): array {
     $defaults = $this->ochaAiChat->getSettings();
 
-    $source_url = $form_state->getValue(['source', 'url']) ?? $defaults['plugins']['source']['url'] ?? NULL;
-    $source_limit = $form_state->getValue(['source', 'limit']) ?? $defaults['plugins']['source']['limit'] ?? 5;
+    // Display the form instructions.
+    if (!empty($defaults['form']['instructions']['value'])) {
+      $form['instructions'] = [
+        '#type' => 'details',
+        '#title' => $this->t('Instructions'),
+        '#open' => TRUE,
+      ];
+      $form['instructions']['content'] = [
+        '#type' => 'processed_text',
+        '#text' => $defaults['form']['instructions']['value'],
+        '#format' => $defaults['form']['instructions']['format'],
+      ];
+    }
+
+    // Add the source widget.
+    $form = $this->ochaAiChat->getSourcePlugin()->getSourceWidget($form, $form_state, $defaults);
 
     // Advanced options for test purposes.
     $form['advanced'] = [
@@ -102,31 +118,7 @@ class OchaAiChatChatForm extends FormBase {
       '#required' => TRUE,
     ];
 
-    // Source of documents.
-    $form['source'] = [
-      '#type' => 'details',
-      '#title' => $this->t('Source documents'),
-      '#tree' => TRUE,
-      '#open' => empty($source_url),
-    ];
-
-    $form['source']['url'] = [
-      '#type' => 'textfield',
-      '#title' => $this->t('ReliefWeb river URL'),
-      '#description' => $this->t('Filtered list of ReliefWeb content from https://reliefweb.int/updates to chat against.'),
-      '#default_value' => $source_url,
-      '#required' => TRUE,
-      '#maxlength' => 2048,
-    ];
-
-    $form['source']['limit'] = [
-      '#type' => 'textfield',
-      '#title' => $this->t('Document limit'),
-      '#description' => $this->t('Maximum number of documents to chat against.'),
-      '#default_value' => $source_limit,
-      '#required' => TRUE,
-    ];
-
+    // Add the chat history.
     $history = $form_state->getValue('history', '');
     $form['chat'] = [
       '#type' => 'fieldset',
@@ -141,12 +133,55 @@ class OchaAiChatChatForm extends FormBase {
 
     foreach (json_decode($history, TRUE) ?? [] as $index => $record) {
       $form['chat'][$index] = [
+        '#type' => 'container',
+        '#attributes' => [
+          'class' => ['ocha-ai-chat-result'],
+        ],
+      ];
+      $form['chat'][$index]['result'] = [
         '#type' => 'inline_template',
-        '#template' => '<dl><dt>Question</dt><dd>{{ question }}</dd><dt>Answer</dt><dd>{{ answer }}</dd><dt>References</dt><dd>{{ references }}</dd></dl>',
+        '#template' => '<dl><dt>Question</dt><dd>{{ question }}</dd><dt>Answer</dt><dd>{{ answer }}</dd>{% if references %}<dt>References</dt><dd>{{ references }}</dd>{% endif %}</dl>',
         '#context' => [
           'question' => $record['question'],
           'answer' => $record['answer'],
           'references' => $this->formatReferences($record['references']),
+        ],
+      ];
+      $form['chat'][$index]['feedback'] = [
+        '#type' => 'details',
+        '#title' => $this->t('Feedback'),
+        '#id' => 'chat-result-' . $index . '-feedback',
+        '#open' => FALSE,
+      ];
+      $form['chat'][$index]['feedback']['satisfaction'] = [
+        '#type' => 'select',
+        '#title' => $this->t('Satisfaction'),
+        '#options' => range(0, 5),
+        '#default_value' => $form_state->getValue([
+          'chat', $index, 'feedback', 'satisfaction',
+        ]),
+      ];
+      $form['chat'][$index]['feedback']['comment'] = [
+        '#type' => 'textarea',
+        '#title' => $this->t('Comment'),
+        '#default_value' => $form_state->getValue([
+          'chat', $index, 'feedback', 'comment',
+        ]),
+      ];
+      $form['chat'][$index]['feedback']['submit'] = [
+        '#type' => 'submit',
+        '#name' => 'chat-result-' . $index . '-feedback-submit',
+        '#value' => $this->t('Submit feedback'),
+        '#limit_validation_errors' => [
+          ['chat', $index, 'feedback'],
+        ],
+        '#attributes' => [
+          'data-result-id' => $record['id'],
+        ],
+        '#ajax' => [
+          'callback' => [$this, 'submitFeedback'],
+          'wrapper' => 'chat-result-' . $index . '-feedback',
+          'disable-refocus' => TRUE,
         ],
       ];
     }
@@ -155,21 +190,29 @@ class OchaAiChatChatForm extends FormBase {
       '#type' => 'textarea',
       '#title' => $this->t('Question'),
       '#default_value' => $form_state->getValue('question') ?? NULL,
+      '#description' => $this->t('Ex: How many people are in need of humanitarian assistance in <em>location</em> due to the <em>event</em> that started on <em>date</em>?'),
       '#rows' => 2,
     ];
 
-    // @todo add field with the result of the question.
-    // @todo replace with a more interesting UI.
-    // @todo add ajax submission.
     $form['actions']['#type'] = 'actions';
     $form['actions']['submit'] = [
       '#type' => 'submit',
       '#value' => $this->t('Ask'),
+      '#name' => 'submit',
       '#description' => $this->t('It may take several minutes to get the answer.'),
       '#button_type' => 'primary',
     ];
 
     $form['#attached']['library'][] = 'ocha_ai_chat/ocha_ai_chat_chat_form';
+
+    // Submit the form via ajax.
+    $form['#prefix'] = '<div id="' . $this->getFormId() . '-wrapper">';
+    $form['#suffix'] = '</div>';
+    $form['actions']['submit']['#attributes']['class'][] = 'use-ajax-submit';
+    $form['actions']['submit']['#ajax'] = [
+      'wrapper' => $this->getFormId() . '-wrapper',
+      'disable-refocus' => TRUE,
+    ];
 
     // @todo check if we need a theme.
     return $form;
@@ -179,55 +222,89 @@ class OchaAiChatChatForm extends FormBase {
    * {@inheritdoc}
    */
   public function submitForm(array &$form, FormStateInterface $form_state): void {
-    $source_url = $form_state->getValue(['source', 'url']);
-    $source_limit = $form_state->getValue(['source', 'limit']);
-    $question = $form_state->getValue('question');
+    $triggering_element = $form_state->getTriggeringElement();
 
-    $completion_plugin_id = $form_state->getValue('completion_plugin_id');
-    if (isset($completion_plugin_id)) {
-      $completion_plugin = $this->ochaAiChat
-        ->getCompletionPluginManager()
-        ->getPlugin($completion_plugin_id);
-    }
-    else {
-      $completion_plugin = NULL;
-    }
+    // Only answer the question if the main submit button was pressed.
+    if (isset($triggering_element['#name']) && $triggering_element['#name'] === 'submit') {
+      $source_data = $this->ochaAiChat->getSourcePlugin()->getSourceData($form, $form_state);
+      $source_limit = $form_state->getValue(['source', 'limit']);
+      $question = $form_state->getValue('question');
 
-    // Get the answer to the question.
-    // @todo use server events etc. for a better UX.
-    $data = $this->ochaAiChat->answer($question, $source_url, $source_limit, $completion_plugin);
+      // Get the answer to the question.
+      // @todo use server events etc. for a better UX.
+      if (!empty($question) && !empty($source_data)) {
+        $completion_plugin_id = $form_state->getValue('completion_plugin_id');
+        if (isset($completion_plugin_id)) {
+          $completion_plugin = $this->ochaAiChat
+            ->getCompletionPluginManager()
+            ->getPlugin($completion_plugin_id);
+        }
+        else {
+          $completion_plugin = NULL;
+        }
 
-    // Generate a list of references used to generate the answer.
-    $references = [];
-    foreach ($data['passages'] as $passage) {
-      $reference_source_url = $passage['source']['url'];
-      if (!isset($references[$reference_source_url])) {
-        $references[$reference_source_url] = [
-          'title' => $passage['source']['title'],
-          'url' => $reference_source_url,
-          'attachments' => [],
+        $data = $this->ochaAiChat->answer($question, $source_data, $source_limit, $completion_plugin);
+
+        // Generate a list of references used to generate the answer.
+        $references = [];
+        foreach ($data['passages'] as $passage) {
+          $reference_source_url = $passage['source']['url'];
+          if (!isset($references[$reference_source_url])) {
+            $references[$reference_source_url] = [
+              'title' => $passage['source']['title'],
+              'url' => $reference_source_url,
+              'attachments' => [],
+            ];
+          }
+          if (isset($passage['source']['attachment'])) {
+            $attachment_url = $passage['source']['attachment']['url'];
+            $attachment_page = $passage['source']['attachment']['page'];
+            $references[$reference_source_url]['attachments'][$attachment_url][$attachment_page] = $attachment_page;
+          }
+        }
+
+        // Update the chat history.
+        $history = json_decode($form_state->getValue('history', ''), TRUE) ?? [];
+        $history[] = [
+          'id' => $data['id'],
+          'question' => $question,
+          'answer' => $data['answer'],
+          'references' => $references,
         ];
+
+        $form_state->setValue('history', json_encode($history));
       }
-      if (isset($passage['source']['attachment'])) {
-        $attachment_url = $passage['source']['attachment']['url'];
-        $attachment_page = $passage['source']['attachment']['page'];
-        $references[$reference_source_url]['attachments'][$attachment_url][$attachment_page] = $attachment_page;
-      }
+
+      // Rebuild the form so that it is reloaded with the inputs from the user
+      // as well as the AI answer.
+      $form_state->setRebuild(TRUE);
     }
+  }
 
-    // Update the chat history.
-    $history = json_decode($form_state->getValue('history', ''), TRUE) ?? [];
-    $history[] = [
-      'question' => $question,
-      'answer' => $data['answer'],
-      'references' => $references,
-    ];
+  /**
+   * Submit the feedback about a chat result.
+   *
+   * @param array $form
+   *   The main form.
+   * @param \Drupal\Core\Form\FormStateInterface $form_state
+   *   The form state.
+   *
+   * @return \Drupal\Core\Ajax\AjaxResponse
+   *   Ajax response to confirm the feedback was submitted.
+   */
+  public function submitFeedback(array &$form, FormStateInterface $form_state): AjaxResponse {
+    $triggering_element = $form_state->getTriggeringElement();
 
-    $form_state->setValue('history', json_encode($history));
+    $id = $triggering_element['#attributes']['data-result-id'];
+    $selector = '#' . $triggering_element['#ajax']['wrapper'];
+    $parents = array_slice($triggering_element['#array_parents'], 0, -1);
+    $feedback = $form_state->getValue($parents);
 
-    // Rebuild the form so that it is reloaded with the inputs from the user
-    // as well as the AI answer.
-    $form_state->setRebuild(TRUE);
+    $this->ochaAiChat->addAnswerFeedback($id, $feedback['satisfaction'], $feedback['comment']);
+
+    $response = new AjaxResponse();
+    $response->addCommand(new MessageCommand($this->t('Feedback submitted, thank you.'), $selector));
+    return $response;
   }
 
   /**
@@ -240,6 +317,10 @@ class OchaAiChatChatForm extends FormBase {
    *   Render array.
    */
   protected function formatReferences(array $references): array {
+    if (empty($references)) {
+      return [];
+    }
+
     $link_options = [
       'attributes' => [
         'rel' => 'noreferrer noopener',
@@ -286,7 +367,7 @@ class OchaAiChatChatForm extends FormBase {
         ],
         '#wrapper_attributes' => [
           'class' => [
-            'ocha-ai-chat-reference_list__item',
+            'ocha-ai-chat-reference-list__item',
           ],
         ],
       ];
@@ -297,7 +378,7 @@ class OchaAiChatChatForm extends FormBase {
       '#list_type' => 'ol',
       '#attributes' => [
         'class' => [
-          'ocha-ai-chat-reference_list',
+          'ocha-ai-chat-reference-list',
         ],
       ],
     ];

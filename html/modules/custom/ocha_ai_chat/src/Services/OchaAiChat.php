@@ -10,6 +10,7 @@ use Drupal\Core\Database\Connection;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\Core\Session\AccountProxyInterface;
 use Drupal\Core\State\StateInterface;
+use Drupal\ocha_ai_chat\Helpers\VectorHelper;
 use Drupal\ocha_ai_chat\Plugin\CompletionPluginInterface;
 use Drupal\ocha_ai_chat\Plugin\CompletionPluginManagerInterface;
 use Drupal\ocha_ai_chat\Plugin\EmbeddingPluginInterface;
@@ -188,8 +189,8 @@ class OchaAiChat {
    *
    * @param string $question
    *   Question.
-   * @param string $url
-   *   Document source URL.
+   * @param array $source
+   *   Data to retrieve the source documents.
    * @param int $limit
    *   Number of documents to retrieve.
    * @param \Drupal\ocha_ai_chat\Plugin\CompletionPluginInterface $completion_plugin
@@ -199,16 +200,21 @@ class OchaAiChat {
    *   Associative array with the qestion, the answer, the source URL,
    *   the limit, the plugins, the stats and the relevant passages.
    */
-  public function answer(string $question, string $url, int $limit = 10, ?CompletionPluginInterface $completion_plugin = NULL): array {
+  public function answer(string $question, array $source, int $limit = 10, ?CompletionPluginInterface $completion_plugin = NULL): array {
     $completion_plugin = $completion_plugin ?? $this->getCompletionPlugin();
     $embedding_plugin = $this->getEmbeddingPlugin();
+    $source_plugin = $this->getSourcePlugin();
     $vector_store_plugin = $this->getVectorStorePlugin();
 
     // Stats to record the time of each operation.
     // @todo either store the stats elsewhere (log etc.) or remove.
     $data = [
-      'source_url' => $url,
+      'completion_plugin_id' => $completion_plugin->getPluginId(),
+      'embedding_plugin_id' => $embedding_plugin->getPluginId(),
+      'source_plugin_id' => $source_plugin->getPluginId(),
+      'source_data' => $source,
       'source_limit' => $limit,
+      'source_document_ids' => [],
       'question' => $question,
       'answer' => '',
       'passages' => [],
@@ -216,8 +222,6 @@ class OchaAiChat {
       'timestamp' => $this->time->getRequestTime(),
       'duration' => 0,
       'uid' => $this->currentUser->id(),
-      'completion_plugin_id' => $completion_plugin->getPluginId(),
-      'embedding_plugin_id' => $embedding_plugin->getPluginId(),
       'stats' => [
         'Get source documents' => 0,
         'Embed documents' => 0,
@@ -230,7 +234,8 @@ class OchaAiChat {
     $time = microtime(TRUE);
 
     // Retrieve the source documents matching the document source URL.
-    ['index' => $index, 'documents' => $documents] = $this->getSourceDocuments($url, $limit);
+    ['index' => $index, 'documents' => $documents] = $this->getSourceDocuments($source, $limit);
+    $data['source_document_ids'] = array_keys($documents);
     $data['stats']['Get source documents'] = 0 - $time + ($time = microtime(TRUE));
 
     // If there are no documents to query, then no need to ask the AI.
@@ -276,6 +281,21 @@ class OchaAiChat {
       $data['passages'] = $passages;
     }
 
+    // Generate inline references for the passages.
+    foreach ($passages as $key => $passage) {
+      $reference = [];
+      // Sources.
+      $reference[] = implode(', ', array_filter(array_map(function ($source) {
+        return $source['shortname'] ?? $source['name'] ?? '';
+      }, $passage['source']['source'])));
+      // Title.
+      $reference[] = '"' . $passage['source']['title'] . '"';
+      // Publication date.
+      $reference[] = date_create($passage['source']['date']['original'])->format('j F Y');
+      // Keep track of the reference so it can be used to generate the context.
+      $passages[$key]['reference'] = implode(', ', $reference);
+    }
+
     // Generate the context to answer the question based on the relevant
     // passages.
     $context = $completion_plugin->generateContext($question, $passages);
@@ -290,27 +310,12 @@ class OchaAiChat {
       return $this->logAnswerData($data);
     }
     else {
-      $data['answer'] = $answer;
+      $data['answer'] = trim($answer);
     }
 
     // Arrived at this point we have a valid answer so we consider the request
     // successful.
     $data['status'] = 'success';
-
-    // Try to rerank the source documents based on the similarity with both
-    // the question and the answer.
-    $answer_embedding = $embedding_plugin->generateEmbedding($answer);
-    if (!empty($answer_embedding)) {
-      // Rerank the relevant passages.
-      // @todo review if multiplying is the best way to rerank.
-      foreach ($data['passages'] as $index => $passage) {
-        $answer_similarity = $this->cosineSimilarity($passage['embedding'], $answer_embedding) + 1.0;
-        $data['passages'][$index]['score'] *= $answer_similarity;
-      }
-      usort($data['passages'], function ($a, $b) {
-        return $b['score'] <=> $a['score'];
-      });
-    }
 
     return $this->logAnswerData($data);
   }
@@ -352,10 +357,36 @@ class OchaAiChat {
   }
 
   /**
+   * Add feedback to an answer.
+   *
+   * @param int $id
+   *   The ID of the answer log.
+   * @param int $satisfaction
+   *   A satisfaction score from 0 to 5.
+   * @param string $feedback
+   *   Feedback comment.
+   *
+   * @return bool
+   *   TRUE if a record was updated.
+   */
+  public function addAnswerFeedback(int $id, int $satisfaction, string $feedback): bool {
+    $updated = $this->database
+      ->update('ocha_ai_chat_logs')
+      ->fields([
+        'satisfaction' => $satisfaction,
+        'feedback' => $feedback,
+      ])
+      ->condition('id', $id, '=')
+      ->execute();
+
+    return !empty($updated);
+  }
+
+  /**
    * Get a list of source documents for the given document source URL.
    *
-   * @param string $url
-   *   Document source URL.
+   * @param array $source
+   *   Data to retrieve the source documents.
    * @param int $limit
    *   Number of documents to retrieve.
    *
@@ -363,10 +394,10 @@ class OchaAiChat {
    *   Associative array with the index corresponding to the type of
    *   documents and the list of source documents for the source URL.
    */
-  protected function getSourceDocuments(string $url, int $limit): array {
+  protected function getSourceDocuments(array $source, int $limit): array {
     $plugin = $this->getSourcePlugin();
 
-    $documents = $plugin->getDocuments($url, $limit);
+    $documents = $plugin->getDocuments($source, $limit);
 
     // @todo allow multiple indices.
     $resource = key($documents);
@@ -381,16 +412,23 @@ class OchaAiChat {
     // For the similarity search, we cannot compare vectors generated by an
     // embedding model with a vector from another embedding model even if they
     // have the same dimensions so we ensure that doesn't happen by prefixing
-    // the index used to store the vectors with the embedding plugin id.
+    // the index used to store the vectors with the embedding plugin id and the
+    // model ID and dimensions.
     //
     // @todo review if we really need the source ID as well. If the index
     // structure is the same between documents regardless of the source then
     // we could remove it.
+    //
+    // @todo ensure it's below 255 characters (ex: generate a hash?)
     $index = implode('__', [
       $this->getEmbeddingPlugin()->getPluginId(),
+      $this->getEmbeddingPlugin()->getModelName(),
+      $this->getEmbeddingPlugin()->getDimensions(),
       $plugin->getPluginId(),
       $resource,
     ]);
+
+    $index = preg_replace('/[^a-z0-9_-]+/', '_', strtolower($index));
 
     return [
       'index' => $index,
@@ -468,23 +506,52 @@ class OchaAiChat {
    *   Document with updated contents.
    */
   protected function processDocument(array $document): array {
-    $contents = $document['contents'];
-
-    foreach ($contents as $key => $content) {
+    foreach ($document['contents'] as $key => $content) {
       switch ($content['type']) {
         case 'markdown':
-          $contents[$key]['pages'] = $this->processMarkdown($content['content']);
+          $content['pages'] = $this->processMarkdown($content['content']);
           break;
 
         case 'file':
-          $contents[$key]['pages'] = $this->processFile($content['url'], $content['mimetype']);
+          $content['pages'] = $this->processFile($content['url'], $content['mimetype']);
           break;
       }
+
+      // Remove empty pages.
+      $content['pages'] = array_filter($content['pages'], function ($page) {
+        return !empty($page['passages']);
+      });
+
+      // Generate the embedding for the content based on the mean of its page
+      // embeddings. This is cheaper than calling the embedding API though we
+      // lose in accuracy.
+      if (!empty($content['pages'])) {
+        $content['embedding'] = $this->getMeanEmbedding($content['pages']);
+      }
+
+      $document['contents'][$key] = $content;
     }
 
-    $document['contents'] = $contents;
-
     return $document;
+  }
+
+  /**
+   * Get the mean of embeddings.
+   *
+   * @param array $elements
+   *   List of associative arrays where earch array has an "embedding" property.
+   *
+   * @return array
+   *   The mean of the embeddings.
+   */
+  protected function getMeanEmbedding(array $elements): array {
+    $embeddings = [];
+    foreach ($elements as $element) {
+      if (!empty($element['embedding'])) {
+        $embeddings[] = $element['embedding'];
+      }
+    }
+    return !empty($embeddings) ? VectorHelper::mean($embeddings, axis: 'y') : [];
   }
 
   /**
@@ -500,7 +567,7 @@ class OchaAiChat {
   protected function processMarkdown(string $text): array {
     $replacements = [
       // Headings.
-      '/^#{1,6}\s*([^#]+)$/um' => "$1\n\n",
+      '/^#{1,6}\s*(.+?)\s*#*\s*$/um' => "$1\n\n",
       // Headings or horizontal lines or code blocks.
       '/^[=*`-]{2,}$/um' => "\n",
     ];
@@ -542,7 +609,7 @@ class OchaAiChat {
     // Create a temporary file to download to.
     $file = tmpfile();
     if ($file === FALSE) {
-      $this->logger->error('Unable to create temporary file');
+      $this->logger->error('Unable to create temporary file.');
       return [];
     }
 
@@ -565,7 +632,7 @@ class OchaAiChat {
         if (!empty($page_texts)) {
           $pages = [];
           foreach ($page_texts as $page_number => $page_text) {
-            $pages[] = $this->processPage($page_text, $page_number + 1);
+            $pages[] = $this->processPage($page_text, $page_number);
           }
           $stats['processing'] = 0 - $time + ($time = microtime(TRUE));
 
@@ -600,11 +667,25 @@ class OchaAiChat {
    *   has a text and corresponding embedding.
    */
   protected function processPage(string $content, int $page = 0): array {
-    $texts = $this->splitText(trim($content));
-    $embeddings = $this->getEmbeddingPlugin()->generateEmbeddings($texts, TRUE);
+    // @todo clean the page.
+    $content = trim($content);
+    if (empty($content)) {
+      return [];
+    }
 
-    // @todo handle cases where the embedding fails. Maybe we should not store
-    // the document in that case.
+    $language = (new \Text_LanguageDetect())->detectSimple($content);
+    // @todo retrieve that from the config.
+    $allowed_languages = ['english'];
+    if (!in_array($language, $allowed_languages)) {
+      return [];
+    }
+
+    // Split the content into passages.
+    $texts = $this->getTextSplitterPlugin()->splitText($content);
+
+    // Generate an embedding for each passage.
+    $embeddings = $this->getEmbeddingPlugin()->generateEmbeddings($texts);
+
     $passages = [];
     foreach ($texts as $index => $text) {
       if (!empty($embeddings[$index])) {
@@ -615,8 +696,20 @@ class OchaAiChat {
       }
     }
 
+    if (empty($passages)) {
+      return [];
+    }
+
+    // Get the embedding for the page from the mean of the passage embeddings.
+    // With some overlap for the passages, this embedding is quite close to
+    // the embedding we could get by calling the API. This is cheaper and
+    // faster so it's a good compromise.
+    $embedding = $this->getMeanEmbedding($passages);
+
     return [
       'page' => $page,
+      'text' => $content,
+      'embedding' => $embedding,
       'passages' => $passages,
     ];
   }
@@ -696,7 +789,7 @@ class OchaAiChat {
    * @return \Drupal\ocha_ai_chat\Plugin\VectorStorePluginManagerInterface
    *   Vector store plugin manager.
    */
-  protected function getVectorStorePluginManager(): VectorStorePluginManagerInterface {
+  public function getVectorStorePluginManager(): VectorStorePluginManagerInterface {
     return $this->vectorStorePluginManager;
   }
 
@@ -706,7 +799,7 @@ class OchaAiChat {
    * @return \Drupal\ocha_ai_chat\Plugin\CompletionPluginInterface
    *   Completion plugin.
    */
-  protected function getCompletionPlugin(): CompletionPluginInterface {
+  public function getCompletionPlugin(): CompletionPluginInterface {
     $plugin_id = $this->getSetting(['plugins', 'completion', 'plugin_id']);
     return $this->getCompletionPluginManager()->getPlugin($plugin_id);
   }
@@ -717,7 +810,7 @@ class OchaAiChat {
    * @return \Drupal\ocha_ai_chat\Plugin\EmbeddingPluginInterface
    *   Embedding plugin.
    */
-  protected function getEmbeddingPlugin(): EmbeddingPluginInterface {
+  public function getEmbeddingPlugin(): EmbeddingPluginInterface {
     $plugin_id = $this->getSetting(['plugins', 'embedding', 'plugin_id']);
     return $this->getEmbeddingPluginManager()->getPlugin($plugin_id);
   }
@@ -728,7 +821,7 @@ class OchaAiChat {
    * @return \Drupal\ocha_ai_chat\Plugin\SourcePluginInterface
    *   Source plugin.
    */
-  protected function getSourcePlugin(): SourcePluginInterface {
+  public function getSourcePlugin(): SourcePluginInterface {
     $plugin_id = $this->getSetting(['plugins', 'source', 'plugin_id']);
     return $this->getSourcePluginManager()->getPlugin($plugin_id);
   }
@@ -739,7 +832,7 @@ class OchaAiChat {
    * @return \Drupal\ocha_ai_chat\Plugin\TextExtractorPluginInterface
    *   Text extractor plugin.
    */
-  protected function getTextExtractorPlugin(string $mimetype): TextExtractorPluginInterface {
+  public function getTextExtractorPlugin(string $mimetype): TextExtractorPluginInterface {
     $plugin_id = $this->getSetting([
       'plugins',
       'text_extractor',
@@ -755,7 +848,7 @@ class OchaAiChat {
    * @return \Drupal\ocha_ai_chat\Plugin\TextSplitterPluginInterface
    *   Text splitter plugin.
    */
-  protected function getTextSplitterPlugin(): TextSplitterPluginInterface {
+  public function getTextSplitterPlugin(): TextSplitterPluginInterface {
     $plugin_id = $this->getSetting(['plugins', 'text_splitter', 'plugin_id']);
     return $this->getTextSplitterPluginManager()->getPlugin($plugin_id);
   }
@@ -766,54 +859,9 @@ class OchaAiChat {
    * @return \Drupal\ocha_ai_chat\Plugin\VectorStorePluginInterface
    *   Vector store plugin.
    */
-  protected function getVectorStorePlugin(): VectorStorePluginInterface {
+  public function getVectorStorePlugin(): VectorStorePluginInterface {
     $plugin_id = $this->getSetting(['plugins', 'vector_store', 'plugin_id']);
     return $this->getVectorStorePluginManager()->getPlugin($plugin_id);
-  }
-
-  /**
-   * Split a text into passages.
-   *
-   * @param string $text
-   *   Text to split.
-   *
-   * @return array
-   *   List of text passages.
-   */
-  protected function splitText(string $text): array {
-    return $this->getTextSplitterPlugin()->splitText($text);
-  }
-
-  /**
-   * Calculate the dot product of 2 vectors.
-   *
-   * @param array $a
-   *   First vector.
-   * @param array $b
-   *   Second vector.
-   *
-   * @return float
-   *   Dot product of the 2 vectors.
-   */
-  protected function dotProdcut(array $a, array $b): float {
-    return array_sum(array_map(function ($x, $y) {
-       return $x * $y;
-    }, $a, $b));
-  }
-
-  /**
-   * Calculate the cosine similarity of 2 vectors.
-   *
-   * @param array $a
-   *   First vector.
-   * @param array $b
-   *   Second vector.
-   *
-   * @return float
-   *   Cosine similarity of the 2 vectors.
-   */
-  protected function cosineSimilarity(array $a, array $b) {
-    return $this->dotProdcut($a, $b) / sqrt($this->dotProdcut($a, $a) * $this->dotProdcut($b, $b));
   }
 
   /**

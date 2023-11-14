@@ -2,12 +2,17 @@
 
 namespace Drupal\ocha_ai_chat\Form;
 
+use Drupal\Core\Ajax\AjaxResponse;
+use Drupal\Core\Ajax\MessageCommand;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\Form\FormBase;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Link;
+use Drupal\Core\Session\AccountProxyInterface;
 use Drupal\Core\Url;
+use Drupal\ocha_ai_chat\Services\OchaAiChat;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
@@ -24,6 +29,13 @@ class OchaAiChatLogsForm extends FormBase {
   protected Connection $database;
 
   /**
+   * The current user.
+   *
+   * @var \Drupal\Core\Session\AccountProxyInterface
+   */
+  protected AccountProxyInterface $currentUser;
+
+  /**
    * The entity type manager service.
    *
    * @var \Drupal\Core\Entity\EntityTypeManagerInterface
@@ -31,19 +43,45 @@ class OchaAiChatLogsForm extends FormBase {
   protected EntityTypeManagerInterface $entityTypeManager;
 
   /**
+   * The file system.
+   *
+   * @var \Drupal\Core\File\FileSystemInterface
+   */
+  protected FileSystemInterface $fileSystem;
+
+  /**
+   * The OCHA AI chat service.
+   *
+   * @var Drupal\ocha_ai_chat\Services\OchaAiChat
+   */
+  protected OchaAiChat $ochaAiChat;
+
+  /**
    * Constructor.
    *
    * @param \Drupal\Core\Database\Connection $database
    *   The database.
+   * @param \Drupal\Core\Session\AccountProxyInterface $current_user
+   *   The current user.
    * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entity_type_manager
    *   The entity type manager.
+   * @param \Drupal\Core\File\FileSystemInterface $file_system
+   *   The file system.
+   * @param \Drupal\ocha_ai_chat\Services\OchaAiChat $ocha_ai_chat
+   *   The OCHA AI chat service.
    */
   public function __construct(
     Connection $database,
-    EntityTypeManagerInterface $entity_type_manager
+    AccountProxyInterface $current_user,
+    EntityTypeManagerInterface $entity_type_manager,
+    FileSystemInterface $file_system,
+    OchaAiChat $ocha_ai_chat
   ) {
     $this->database = $database;
+    $this->currentUser = $current_user;
     $this->entityTypeManager = $entity_type_manager;
+    $this->fileSystem = $file_system;
+    $this->ochaAiChat = $ocha_ai_chat;
   }
 
   /**
@@ -52,7 +90,10 @@ class OchaAiChatLogsForm extends FormBase {
   public static function create(ContainerInterface $container) {
     return new static(
       $container->get('database'),
-      $container->get('entity_type.manager')
+      $container->get('current_user'),
+      $container->get('entity_type.manager'),
+      $container->get('file_system'),
+      $container->get('ocha_ai_chat.chat')
     );
   }
 
@@ -63,7 +104,9 @@ class OchaAiChatLogsForm extends FormBase {
     // Expose the filters.
     $form['#method'] = 'GET';
     $form['#cache'] = ['max-age' => 0];
-    $form['#after_build'] = ['::afterBuild'];
+
+    $form_state->setMethod('GET');
+    $form_state->disableCache();
 
     $question = $this->getRequest()->get('question') ?? '';
     $answer = $this->getRequest()->get('answer') ?? '';
@@ -147,6 +190,13 @@ class OchaAiChatLogsForm extends FormBase {
       'user' => [
         'data' => $this->t('User'),
       ],
+      'rate' => [
+        'data' => $this->t('Rate'),
+        'field' => 'satisfaction',
+      ],
+      'feedback' => [
+        'data' => $this->t('Feedback'),
+      ],
       'stats' => [
         'data' => $this->t('Stats'),
       ],
@@ -180,12 +230,17 @@ class OchaAiChatLogsForm extends FormBase {
 
     $rows = [];
     foreach ($query->execute() ?? [] as $record) {
+      $source_plugin_id = $record->source_plugin_id;
+      $source_plugin = $this->ochaAiChat->getSourcePluginManager()->getPlugin($source_plugin_id);
+      $source_data = json_decode($record->source_data, TRUE);
       $passages = json_decode($record->passages, TRUE);
       $stats = json_decode($record->stats, TRUE);
 
       $rows[] = [
         'timestamp' => gmdate('Y-m-d H:i:s', $record->timestamp),
-        'source' => Link::fromTextAndUrl($this->t('Link'), Url::fromUri($record->source_url, $link_options)),
+        'source' => [
+          'data' => $source_plugin->renderSourceData($source_data),
+        ],
         'question' => $record->question,
         'answer' => $record->answer,
         'context' => [
@@ -198,7 +253,18 @@ class OchaAiChatLogsForm extends FormBase {
         ],
         'status' => $record->status,
         'duration' => $record->duration,
-        'user' => isset($users[$record->uid]) ? $users[$record->uid]->label() : '',
+        'user' => isset($users[$record->uid]) ? $users[$record->uid]->toLink(options: $link_options) : '',
+        'rate' => $record->satisfaction ?? 0,
+        'feedback' => [
+          'data' => [
+            '#type' => 'details',
+            '#title' => $this->t('Feedback'),
+            '#open' => FALSE,
+            'feedback' => [
+              '#markup' => $record->feedback ?? $this->t('No feedback provided.'),
+            ],
+          ],
+        ],
         'stats' => [
           'data' => [
             '#type' => 'details',
@@ -209,6 +275,25 @@ class OchaAiChatLogsForm extends FormBase {
         ],
       ];
     }
+
+    $form['download'] = [
+      '#type' => 'container',
+      '#id' => 'download',
+      '#tree' => TRUE,
+    ];
+    $form['download']['submit'] = [
+      '#type' => 'submit',
+      '#name' => 'download',
+      '#value' => $this->t('Download as CSV'),
+      '#limit_validation_errors' => [
+        ['download'],
+      ],
+      '#ajax' => [
+        'callback' => [$this, 'downloadCsv'],
+        'wrapper' => 'download',
+        'disable-refocus' => TRUE,
+      ],
+    ];
 
     $form['table'] = [
       '#type' => 'table',
@@ -224,26 +309,6 @@ class OchaAiChatLogsForm extends FormBase {
     $form['#attached']['library'][] = 'ocha_ai_chat/ocha_ai_chat_logs_form';
 
     return $form;
-  }
-
-  /**
-   * Remove elements from being submitted as GET variables.
-   *
-   * @param array $element
-   *   From element.
-   * @param \Drupal\Core\Form\FormStateInterface $form_state
-   *   Form state.
-   *
-   * @return array
-   *   The modified form element.
-   */
-  public function afterBuild(array $element, FormStateInterface $form_state): array {
-    // Remove the form_token, form_build_id and form_id from the GET parameters.
-    unset($element['form_token']);
-    unset($element['form_build_id']);
-    unset($element['form_id']);
-
-    return $element;
   }
 
   /**
@@ -283,20 +348,37 @@ class OchaAiChatLogsForm extends FormBase {
    *   Render array for the passages.
    */
   protected function formatPassages(array $passages): array {
+    $link_options = [
+      'attributes' => [
+        'rel' => 'noreferrer noopener',
+        'target' => '_blank',
+      ],
+    ];
+
     $items = [];
     foreach ($passages as $passage) {
       $source_title = $passage['source']['title'];
       if (!empty($passage['source']['page'])) {
         $source_title .= ' (page ' . $passage['source']['page'] . ')';
       }
-      $source_url = Url::fromUri($passage['source']['url']);
+      $source_url = Url::fromUri($passage['source']['url'], $link_options);
+
+      // Source organizations.
+      $sources = implode(', ', array_filter(array_map(function ($source) {
+        return $source['shortname'] ?? $source['name'] ?? '';
+      }, $passage['source']['source'] ?? [])));
+
+      // Publication date.
+      $date = date_create($passage['source']['date']['original'])->format('j F Y');
 
       $items[] = [
         '#type' => 'inline_template',
-        '#template' => '{{ text }}<br><small>Source: {{ source }}</small>',
+        '#template' => '{{ text }}<br><small>Source: {{ sources }}, {{ title }}, {{ date }}</small>',
         '#context' => [
           'text' => $passage['text'],
-          'source' => Link::fromTextAndUrl($source_title, $source_url),
+          'sources' => $sources,
+          'title' => Link::fromTextAndUrl($source_title, $source_url),
+          'date' => $date,
         ],
       ];
     }
@@ -310,6 +392,104 @@ class OchaAiChatLogsForm extends FormBase {
    * {@inheritdoc}
    */
   public function submitForm(array &$form, FormStateInterface $form_state): void {}
+
+  /**
+   * Remove elements from being submitted as GET variables.
+   *
+   * @param array $form
+   *   From.
+   * @param \Drupal\Core\Form\FormStateInterface $form_state
+   *   Form state.
+   *
+   * @return \Drupal\Core\Ajax\AjaxResponse
+   *   Ajax response to replace the button with a link to download the file.
+   *
+   * @todo see if can just send a response to download the file.
+   */
+  public function downloadCsv(array &$form, FormStateInterface $form_state): AjaxResponse {
+    $response = new AjaxResponse();
+    $selector = '#download';
+    $directory = 'private://ocha_ai_chat_logs/';
+
+    // Create a temporary managed file so it can be deleted on cron.
+    $file = $this->entityTypeManager->getStorage('file')->create();
+    $file->setFileName($file->uuid() . '.csv');
+    $file->setFileUri($directory . $file->uuid() . '.csv');
+    $file->setTemporary();
+    $file->setOwnerId($this->currentUser->id());
+    $file->save();
+
+    try {
+      $this->fileSystem->prepareDirectory($directory, $this->fileSystem::CREATE_DIRECTORY);
+    }
+    catch (\Exception $exception) {
+      return $response->addCommand(new MessageCommand('Unable to create directory for the log export', $selector));
+    }
+
+    $handle = fopen($file->getFileUri(), 'a');
+    if ($strean === FALSE) {
+      return $response->addCommand(new MessageCommand('Unable to create temporary file for the log export', $selector));
+    }
+
+    // Retrieve the log records.
+    try {
+      $question = $this->getRequest()->get('question');
+      $answer = $this->getRequest()->get('answer');
+      $user = $this->getRequest()->get('user');
+
+      while (TRUE) {
+        $query = $this->database
+          ->select('ocha_ai_chat_logs', 'ocha_ai_chat_logs')
+          ->fields('ocha_ai_chat_logs')
+          ->orderBy('ocha_ai_chat_logs.id', 'DESC')
+          ->range(0, 50);
+
+        if (!empty($question)) {
+          $query->condition('ocha_ai_chat_logs.question', '%' . $question . '%', 'LIKE');
+        }
+        if (!empty($answer)) {
+          $query->condition('ocha_ai_chat_logs.question', '%' . $answer . '%', 'LIKE');
+        }
+        if (!empty($user)) {
+          $query->condition('ocha_ai_chat_logs.uid', $user, '=');
+        }
+
+        if (isset($last_id)) {
+          $query->condition('ocha_ai_chat_logs.id', $last_id, '<');
+        }
+
+        $results = $query->execute()?->fetchAllAssoc('id', \PDO::FETCH_ASSOC);
+        if (empty($results)) {
+          break;
+        }
+
+        if (!isset($last_id)) {
+          if (fputcsv($handle, array_keys(reset($results))) === FALSE) {
+            throw new \Exception('Unable to write headers to file for the log export');
+          }
+        }
+
+        foreach ($results as $result) {
+          if (fputcsv($handle, $result) === FALSE) {
+            throw new \Exception('Unable to write rows to file for the log export');
+          }
+        }
+
+        $last_id = min(array_keys($results));
+      }
+    }
+    catch (\Exception $exception) {
+      return $response->addCommand(new MessageCommand($exception->getMessage(), $selector));
+    }
+    finally {
+      fclose($handle);
+    }
+
+    $message = $this->t('Download the logs <a href="@url" target="_blank">here</a>.', [
+      '@url' => $file->createFileUrl(),
+    ]);
+    return $response->addCommand(new MessageCommand($message, $selector));
+  }
 
   /**
    * {@inheritdoc}

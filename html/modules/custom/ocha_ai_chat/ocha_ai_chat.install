@@ -18,10 +18,31 @@ function ocha_ai_chat_schema() {
         'size' => 'normal',
         'not null' => TRUE,
       ],
-      'source_url' => [
-        'description' => 'Source URL.',
+      'completion_plugin_id' => [
+        'description' => 'Completion plugin ID',
+        'type' => 'varchar_ascii',
+        'length' => 128,
+        'not null' => TRUE,
+        'default' => '',
+      ],
+      'embedding_plugin_id' => [
+        'description' => 'Embedding plugin ID',
+        'type' => 'varchar_ascii',
+        'length' => 128,
+        'not null' => TRUE,
+        'default' => '',
+      ],
+      'source_plugin_id' => [
+        'description' => 'Source plugin ID',
+        'type' => 'varchar_ascii',
+        'length' => 128,
+        'not null' => TRUE,
+        'default' => '',
+      ],
+      'source_data' => [
+        'description' => 'Source data.',
         'type' => 'text',
-        'size' => 'normal',
+        'size' => 'medium',
         'not null' => TRUE,
         'default' => '',
       ],
@@ -32,6 +53,13 @@ function ocha_ai_chat_schema() {
         'size' => 'normal',
         'not null' => TRUE,
         'default' => 0,
+      ],
+      'source_document_ids' => [
+        'description' => 'Source document IDs.',
+        'type' => 'text',
+        'size' => 'normal',
+        'not null' => TRUE,
+        'default' => '',
       ],
       'question' => [
         'description' => 'Question.',
@@ -85,20 +113,6 @@ function ocha_ai_chat_schema() {
         'not null' => TRUE,
         'default' => 0,
       ],
-      'completion_plugin_id' => [
-        'description' => 'Completion plugin ID',
-        'type' => 'varchar_ascii',
-        'length' => 128,
-        'not null' => TRUE,
-        'default' => '',
-      ],
-      'embedding_plugin_id' => [
-        'description' => 'Embedding plugin ID',
-        'type' => 'varchar_ascii',
-        'length' => 128,
-        'not null' => TRUE,
-        'default' => '',
-      ],
       'stats' => [
         'description' => 'Stats (durations and plugin IDs for the different steps).',
         'type' => 'text',
@@ -106,13 +120,18 @@ function ocha_ai_chat_schema() {
         'not null' => TRUE,
         'default' => '',
       ],
-      'Satisfaction' => [
+      'satisfaction' => [
         'description' => 'Satisfaction score from 0 to 5.',
         'type' => 'int',
         'unsigned' => TRUE,
         'size' => 'tiny',
-        'not null' => TRUE,
-        'default' => 0,
+        'not null' => FALSE,
+      ],
+      'feedback' => [
+        'description' => 'Feedback on the quality of the answer.',
+        'type' => 'text',
+        'size' => 'medium',
+        'not null' => FALSE,
       ],
     ],
     'primary key' => ['id'],
@@ -131,4 +150,17 @@ function ocha_ai_chat_update_10001(array &$sandbox) {
   if (!$schema->tableExists('ocha_ai_chat_logs')) {
     $schema->createTable('ocha_ai_chat_logs', ocha_ai_chat_schema()['ocha_ai_chat_logs']);
   }
+}
+
+/**
+ * Implements hook_update_N().
+ *
+ * Replace the OCHA AI chat logs table.
+ */
+function ocha_ai_chat_update_10002(array &$sandbox) {
+  $schema = \Drupal::database()->schema();
+  if ($schema->tableExists('ocha_ai_chat_logs')) {
+    $schema->dropTable('ocha_ai_chat_logs');
+  }
+  $schema->createTable('ocha_ai_chat_logs', ocha_ai_chat_schema()['ocha_ai_chat_logs']);
 }

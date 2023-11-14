@@ -164,7 +164,7 @@ class MuPdf extends TextExtractorPluginBase {
     $text = preg_replace('/[ ]+/u', ' ', $text);
 
     // Remove non printable or invalid characters.
-    $text = preg_replace('/p{C}/u', '', $text);
+    $text = preg_replace('/[^\P{C}\t\r\n]/u', '', $text);
 
     return $text;
   }

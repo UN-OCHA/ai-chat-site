@@ -110,20 +110,6 @@ class AwsBedrock extends EmbeddingPluginBase {
   }
 
   /**
-   * Estimate the number of tokens for a text.
-   *
-   * @param string $text
-   *   Text.
-   *
-   * @return int
-   *   Estimated number of tokens in the text.
-   */
-  protected function estimateTokenCount(string $text): int {
-    $word_count = count(preg_split('/[^\p{L}\p{N}\']+/u', $text));
-    return floor($word_count * 0.75);
-  }
-
-  /**
    * Get the Bedrock API Client.
    *
    * @return \Aws\BedrockRuntime\BedrockRuntimeClient
@@ -163,6 +149,11 @@ class AwsBedrock extends EmbeddingPluginBase {
         'region'  => $region,
       ];
 
+      $endpoint = $this->getPluginSetting('endpoint', NULL, FALSE);
+      if (!empty($endpoint)) {
+        $options['endpoint'] = $endpoint;
+      }
+
       $this->apiClient = new BedrockRuntimeClient($options);
     }
     return $this->apiClient;
@@ -201,6 +192,11 @@ class AwsBedrock extends EmbeddingPluginBase {
       '#description' => $this->t('Role ARN to access the API.'),
       '#default_value' => $config['role_arn'] ?? NULL,
     ];
+
+    // Move those fields lower in the form.
+    $form['plugins'][$plugin_type][$plugin_id]['batch_size']['#weight'] = 2;
+    $form['plugins'][$plugin_type][$plugin_id]['dimensions']['#weight'] = 3;
+    $form['plugins'][$plugin_type][$plugin_id]['max_tokens']['#weight'] = 4;
 
     return $form;
   }

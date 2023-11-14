@@ -2,6 +2,7 @@
 
 namespace Drupal\ocha_ai_chat\Plugin\ocha_ai_chat\Embedding;
 
+use Drupal\ocha_ai_chat\Helpers\TextHelper;
 use Drupal\ocha_ai_chat\Plugin\EmbeddingPluginBase;
 use GuzzleHttp\Client as GuzzleClient;
 use GuzzleHttp\HandlerStack;
@@ -45,7 +46,7 @@ class AzureOpenAi extends EmbeddingPluginBase {
     $accumulator = [];
     $embeddings = [];
     foreach ($texts as $index => $text) {
-      $token_count = $this->estimateTokenCount($text);
+      $token_count = TextHelper::estimateTokenCount($text);
       if (
         count($accumulator) < $batch_size &&
         array_sum($accumulator) + $token_count < $max_tokens
@@ -129,20 +130,6 @@ class AzureOpenAi extends EmbeddingPluginBase {
     return array_map(function ($item) {
       return $item['embedding'] ?? [];
     }, $data['data'] ?? array_fill(0, count($texts), []));
-  }
-
-  /**
-   * Estimate the number of tokens for a text.
-   *
-   * @param string $text
-   *   Text.
-   *
-   * @return int
-   *   Estimated number of tokens in the text.
-   */
-  protected function estimateTokenCount(string $text): int {
-    $word_count = count(preg_split('/[^\p{L}\p{N}\']+/u', $text));
-    return floor($word_count * 0.75);
   }
 
   /**

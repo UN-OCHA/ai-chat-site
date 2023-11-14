@@ -35,9 +35,10 @@ class AwsBedrock extends CompletionPluginBase {
       return '';
     }
 
+    $template = strtr($this->getPluginSetting('prompt_template'), ["\r" => '']);
+
     // @todo review what is a good template for AWS titan model.
-    $prompt = strtr($this->getPluginSetting('prompt_template'), [
-      "\r" => '',
+    $prompt = strtr($template, [
       '{{ context }}' => $context,
       '{{ question }}' => $question,
     ]);
@@ -48,7 +49,7 @@ class AwsBedrock extends CompletionPluginBase {
         'inputText' => $prompt,
         'textGenerationConfig' => [
           'maxTokenCount' => $this->getPluginSetting('max_tokens', 512),
-          // @todo adjust based on the prompt.
+          // @todo adjust based on the prompt?
           'stopSequences' => [],
           'temperature' => 0.0,
           'topP' => 0.9,
@@ -163,6 +164,10 @@ class AwsBedrock extends CompletionPluginBase {
       '#description' => $this->t('Role ARN to access the API.'),
       '#default_value' => $config['role_arn'] ?? NULL,
     ];
+
+    // Move those fields lower in the form.
+    $form['plugins'][$plugin_type][$plugin_id]['max_tokens']['#weight'] = 2;
+    $form['plugins'][$plugin_type][$plugin_id]['prompt_template']['#weight'] = 3;
 
     return $form;
   }
