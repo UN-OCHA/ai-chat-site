@@ -3,6 +3,9 @@
 namespace Drupal\ocha_ai_chat\Plugin\ocha_ai_chat\Source;
 
 use Drupal\Core\Form\FormStateInterface;
+use Drupal\Core\Link;
+use Drupal\Core\Render\Element;
+use Drupal\Core\Url;
 use Drupal\ocha_ai_chat\Plugin\SourcePluginBase;
 use GuzzleHttp\Exception\BadResponseException;
 use Symfony\Component\Uid\Uuid;
@@ -97,7 +100,125 @@ class ReliefWeb extends SourcePluginBase {
   /**
    * {@inheritdoc}
    */
-  public function getDocuments(string $url, int $limit = 10): array {
+  public function getSourceWidget(array $form, FormStateInterface $form_state, array $defaults): array {
+    $editable = empty($defaults['plugins']['source']['reliefweb']['url']);
+    $display = $editable || !empty($defaults['plugins']['source']['reliefweb']['display']);
+    $open = !empty($defaults['plugins']['source']['reliefweb']['open']);
+
+    $source_url = $form_state->getValue(['source', 'url']) ?? $defaults['plugins']['source']['reliefweb']['url'] ?? '';
+    $source_limit = $form_state->getValue(['source', 'limit']) ?? $defaults['plugins']['source']['reliefweb']['limit'] ?? 5;
+
+    // Source of documents.
+    $form['source'] = [
+      '#type' => $display ? 'details' : 'container',
+      '#title' => $this->t('Source documents'),
+      '#tree' => TRUE,
+      '#open' => $open,
+    ];
+
+    if ($editable) {
+      // ReliefWeb river URL.
+      $form['source']['url'] = [
+        '#type' => 'textfield',
+        '#title' => $this->t('ReliefWeb river URL'),
+        '#description' => $this->t('Filtered list of ReliefWeb content from <a href="https://reliefweb.int/updates?view=reports" target="_blank" rel="noreferrer noopener">https://reliefweb.int/updates</a> to chat against.'),
+        '#default_value' => $source_url,
+        '#required' => TRUE,
+        '#maxlength' => 2048,
+        // @todo this is for the demo.
+        '#disabled' => !$editable,
+      ];
+
+      // Limit the number of allowed documents.
+      $form['source']['limit'] = [
+        '#type' => 'number',
+        '#title' => $this->t('Document limit'),
+        '#description' => $this->t('Maximum number of documents to chat against.'),
+        '#default_value' => min($source_limit, 1),
+        '#required' => TRUE,
+        '#min' => 1,
+        // @todo retrieve that from the configuration.
+        '#max' => 10,
+        // @todo this is for the demo.
+        '#disabled' => !$editable,
+      ];
+    }
+    else {
+      $form['source']['url'] = [
+        '#type' => 'hidden',
+        '#value' => $source_url,
+      ];
+      $form['source']['limit'] = [
+        '#type' => 'hidden',
+        '#value' => $source_limit,
+      ];
+
+      if ($display) {
+        $source_url = $this->prepareRiverUrl($source_url);
+        $source_link = Link::fromTextAndUrl(rawurldecode($source_url), Url::fromUri($source_url, [
+          'attributes' => [
+            'rel' => 'noreferrer noopener',
+            'target' => '_blank',
+          ],
+        ]))->toString();
+        $form['source']['link']['#markup'] = $this->formatPlural(
+          $source_limit,
+          'The most recent document from @link',
+          'The @count most recent documents from @link',
+          ['@link' => $source_link]
+        );
+      }
+    }
+
+    // Display the source open if some required element of the source are
+    // empty.
+    if (!$open) {
+      foreach (Element::children($form['source']) as $key) {
+        $child = $form['source'][$key];
+        if (!empty($child['#required']) && empty($child['#default_value'])) {
+          $form['source']['#open'] = TRUE;
+          break;
+        }
+      }
+    }
+
+    return $form;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getSourceData(array $form, FormStateInterface $form_state): array {
+    return [
+      'url' => $form_state->getValue(['source', 'url']),
+    ];
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function renderSourceData(array $data): array {
+    if (isset($data['url'])) {
+      $url = Url::fromUri($data['url'], [
+        'attributes' => [
+          'rel' => 'noreferrer noopener',
+          'target' => '_blank',
+        ],
+      ]);
+      return Link::fromTextAndUrl($this->t('Link'), $url)->toRenderable();
+    }
+    return [];
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getDocuments(array $data, int $limit = 10): array {
+    if (!isset($data['url'])) {
+      return [];
+    }
+    $url = $data['url'];
+
     // 1. Retrieve the API resource and payload for the river URL.
     // 2. Retrieve the API data.
     // 3. Convert the API data.

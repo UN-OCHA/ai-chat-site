@@ -46,6 +46,13 @@ ocha_ai_chat.settings:
       type: mapping
       label: 'Default settings.'
       mapping:
+        form:
+          type: mapping
+          label: 'Default form settings.'
+          mapping:
+            instructions:
+              type: string
+              label: 'Instructions.'
         plugins:
           type: mapping
           label: 'Default plugins.'

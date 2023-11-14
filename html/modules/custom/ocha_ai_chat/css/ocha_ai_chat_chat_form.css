@@ -1,12 +1,3 @@
-.ocha-ai-chat-chat-form dl {
-  padding: 12px;
-  border: 1px solid black;
-  border-radius: 6px;
-}
-.ocha-ai-chat-chat-form dt {
-  font-weight: bold;
-}
-
 .ocha-ai-chat-chat-form details {
   display: block;
   padding: 12px;
@@ -15,13 +6,40 @@
   background-color: #fff;
   box-shadow: rgba(0, 0, 0, 0.1) 0 2px 4px 0;
 }
-.ocha-ai-chat-chat-form summary {
+.ocha-ai-chat-chat-form details summary {
+  cursor: pointer;
   font-weight: bold;
 }
 .ocha-ai-chat-chat-form details[open] summary {
   margin-bottom: 12px;
 }
 
+.ocha-ai-chat-chat-form a {
+  word-break: break-all;
+}
+
+.ocha-ai-chat-chat-form .ocha-ai-chat-result {
+  margin-top: 1rem;
+  padding: 12px;
+  border: 1px solid black;
+  border-radius: 6px;
+}
+.ocha-ai-chat-chat-form .ocha-ai-chat-result + .ocha-ai-chat-result {
+  margin-top: 1rem;
+}
+.ocha-ai-chat-chat-form .ocha-ai-chat-result:last-child {
+  border: 4px solid #82b5e9;
+}
+.ocha-ai-chat-chat-form .ocha-ai-chat-result dl {
+  margin-top: 0;
+}
+.ocha-ai-chat-chat-form .ocha-ai-chat-result dt {
+  font-weight: bold;
+}
+
+.ocha-ai-chat-chat-form .ocha-ai-chat-reference-list {
+  margin-left: -1rem;
+}
 .ocha-ai-chat-chat-form .ocha-ai-chat-reference {
   display: inline;
   margin: 0;

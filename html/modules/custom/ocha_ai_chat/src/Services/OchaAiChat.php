@@ -189,8 +189,8 @@ class OchaAiChat {
    *
    * @param string $question
    *   Question.
-   * @param string $url
-   *   Document source URL.
+   * @param array $source
+   *   Data to retrieve the source documents.
    * @param int $limit
    *   Number of documents to retrieve.
    * @param \Drupal\ocha_ai_chat\Plugin\CompletionPluginInterface $completion_plugin
@@ -200,15 +200,19 @@ class OchaAiChat {
    *   Associative array with the qestion, the answer, the source URL,
    *   the limit, the plugins, the stats and the relevant passages.
    */
-  public function answer(string $question, string $url, int $limit = 10, ?CompletionPluginInterface $completion_plugin = NULL): array {
+  public function answer(string $question, array $source, int $limit = 10, ?CompletionPluginInterface $completion_plugin = NULL): array {
     $completion_plugin = $completion_plugin ?? $this->getCompletionPlugin();
     $embedding_plugin = $this->getEmbeddingPlugin();
+    $source_plugin = $this->getSourcePlugin();
     $vector_store_plugin = $this->getVectorStorePlugin();
 
     // Stats to record the time of each operation.
     // @todo either store the stats elsewhere (log etc.) or remove.
     $data = [
-      'source_url' => $url,
+      'completion_plugin_id' => $completion_plugin->getPluginId(),
+      'embedding_plugin_id' => $embedding_plugin->getPluginId(),
+      'source_plugin_id' => $source_plugin->getPluginId(),
+      'source_data' => $source,
       'source_limit' => $limit,
       'source_document_ids' => [],
       'question' => $question,
@@ -218,8 +222,6 @@ class OchaAiChat {
       'timestamp' => $this->time->getRequestTime(),
       'duration' => 0,
       'uid' => $this->currentUser->id(),
-      'completion_plugin_id' => $completion_plugin->getPluginId(),
-      'embedding_plugin_id' => $embedding_plugin->getPluginId(),
       'stats' => [
         'Get source documents' => 0,
         'Embed documents' => 0,
@@ -232,7 +234,7 @@ class OchaAiChat {
     $time = microtime(TRUE);
 
     // Retrieve the source documents matching the document source URL.
-    ['index' => $index, 'documents' => $documents] = $this->getSourceDocuments($url, $limit);
+    ['index' => $index, 'documents' => $documents] = $this->getSourceDocuments($source, $limit);
     $data['source_document_ids'] = array_keys($documents);
     $data['stats']['Get source documents'] = 0 - $time + ($time = microtime(TRUE));
 
@@ -355,10 +357,36 @@ class OchaAiChat {
   }
 
   /**
+   * Add feedback to an answer.
+   *
+   * @param int $id
+   *   The ID of the answer log.
+   * @param int $satisfaction
+   *   A satisfaction score from 0 to 5.
+   * @param string $feedback
+   *   Feedback comment.
+   *
+   * @return bool
+   *   TRUE if a record was updated.
+   */
+  public function addAnswerFeedback(int $id, int $satisfaction, string $feedback): bool {
+    $updated = $this->database
+      ->update('ocha_ai_chat_logs')
+      ->fields([
+        'satisfaction' => $satisfaction,
+        'feedback' => $feedback,
+      ])
+      ->condition('id', $id, '=')
+      ->execute();
+
+    return !empty($updated);
+  }
+
+  /**
    * Get a list of source documents for the given document source URL.
    *
-   * @param string $url
-   *   Document source URL.
+   * @param array $source
+   *   Data to retrieve the source documents.
    * @param int $limit
    *   Number of documents to retrieve.
    *
@@ -366,10 +394,10 @@ class OchaAiChat {
    *   Associative array with the index corresponding to the type of
    *   documents and the list of source documents for the source URL.
    */
-  protected function getSourceDocuments(string $url, int $limit): array {
+  protected function getSourceDocuments(array $source, int $limit): array {
     $plugin = $this->getSourcePlugin();
 
-    $documents = $plugin->getDocuments($url, $limit);
+    $documents = $plugin->getDocuments($source, $limit);
 
     // @todo allow multiple indices.
     $resource = key($documents);
@@ -761,7 +789,7 @@ class OchaAiChat {
    * @return \Drupal\ocha_ai_chat\Plugin\VectorStorePluginManagerInterface
    *   Vector store plugin manager.
    */
-  protected function getVectorStorePluginManager(): VectorStorePluginManagerInterface {
+  public function getVectorStorePluginManager(): VectorStorePluginManagerInterface {
     return $this->vectorStorePluginManager;
   }
 
@@ -771,7 +799,7 @@ class OchaAiChat {
    * @return \Drupal\ocha_ai_chat\Plugin\CompletionPluginInterface
    *   Completion plugin.
    */
-  protected function getCompletionPlugin(): CompletionPluginInterface {
+  public function getCompletionPlugin(): CompletionPluginInterface {
     $plugin_id = $this->getSetting(['plugins', 'completion', 'plugin_id']);
     return $this->getCompletionPluginManager()->getPlugin($plugin_id);
   }
@@ -782,7 +810,7 @@ class OchaAiChat {
    * @return \Drupal\ocha_ai_chat\Plugin\EmbeddingPluginInterface
    *   Embedding plugin.
    */
-  protected function getEmbeddingPlugin(): EmbeddingPluginInterface {
+  public function getEmbeddingPlugin(): EmbeddingPluginInterface {
     $plugin_id = $this->getSetting(['plugins', 'embedding', 'plugin_id']);
     return $this->getEmbeddingPluginManager()->getPlugin($plugin_id);
   }
@@ -793,7 +821,7 @@ class OchaAiChat {
    * @return \Drupal\ocha_ai_chat\Plugin\SourcePluginInterface
    *   Source plugin.
    */
-  protected function getSourcePlugin(): SourcePluginInterface {
+  public function getSourcePlugin(): SourcePluginInterface {
     $plugin_id = $this->getSetting(['plugins', 'source', 'plugin_id']);
     return $this->getSourcePluginManager()->getPlugin($plugin_id);
   }
@@ -804,7 +832,7 @@ class OchaAiChat {
    * @return \Drupal\ocha_ai_chat\Plugin\TextExtractorPluginInterface
    *   Text extractor plugin.
    */
-  protected function getTextExtractorPlugin(string $mimetype): TextExtractorPluginInterface {
+  public function getTextExtractorPlugin(string $mimetype): TextExtractorPluginInterface {
     $plugin_id = $this->getSetting([
       'plugins',
       'text_extractor',
@@ -820,7 +848,7 @@ class OchaAiChat {
    * @return \Drupal\ocha_ai_chat\Plugin\TextSplitterPluginInterface
    *   Text splitter plugin.
    */
-  protected function getTextSplitterPlugin(): TextSplitterPluginInterface {
+  public function getTextSplitterPlugin(): TextSplitterPluginInterface {
     $plugin_id = $this->getSetting(['plugins', 'text_splitter', 'plugin_id']);
     return $this->getTextSplitterPluginManager()->getPlugin($plugin_id);
   }
@@ -831,7 +859,7 @@ class OchaAiChat {
    * @return \Drupal\ocha_ai_chat\Plugin\VectorStorePluginInterface
    *   Vector store plugin.
    */
-  protected function getVectorStorePlugin(): VectorStorePluginInterface {
+  public function getVectorStorePlugin(): VectorStorePluginInterface {
     $plugin_id = $this->getSetting(['plugins', 'vector_store', 'plugin_id']);
     return $this->getVectorStorePluginManager()->getPlugin($plugin_id);
   }
