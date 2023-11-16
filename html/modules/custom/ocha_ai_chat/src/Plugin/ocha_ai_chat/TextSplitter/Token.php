@@ -49,9 +49,9 @@ class Token extends TextSplitterPluginBase {
         // Add extra lines to the group to have an overlap with the next one
         // that will give more context to the text and helps with relevancy.
         for ($i = $index; $i < $total_lines; $i++) {
+          $group_token_count += $lines[$i]['token_count'];
           if ($group_token_count <= $group_max_token_count) {
-            $group[] = $lines[$i]['text'];
-            $group_token_count += $lines[$i]['token_count'];
+            $group[$i] = $lines[$i]['text'];
           }
           else {
             break;
@@ -63,7 +63,7 @@ class Token extends TextSplitterPluginBase {
         $group_token_count = 0;
       }
 
-      $group[] = $line['text'];
+      $group[$index] = $line['text'];
       $group_token_count += $line['token_count'];
     }
 
@@ -71,7 +71,7 @@ class Token extends TextSplitterPluginBase {
     if (!empty($group)) {
       $last = array_key_last($groups);
       if (isset($last)) {
-        $groups[$last] = array_merge($groups[$last], $group);
+        $groups[$last] += $group;
       }
       else {
         $groups[] = $group;
