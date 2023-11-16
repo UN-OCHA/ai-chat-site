@@ -53,8 +53,8 @@ plugins:
       mutool: /usr/bin/mutool
   text_splitter:
     token:
-      length: 256
-      overlap: 64
+      length: 384
+      overlap: 96
     sentence:
       length: 4
       overlap: 2

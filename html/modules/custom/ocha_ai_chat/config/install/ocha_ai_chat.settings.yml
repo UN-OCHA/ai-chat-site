@@ -27,8 +27,8 @@ plugins:
       length: 4
       overlap: 2
     token:
-      length: 256
-      overlap: 64
+      length: 384
+      overlap: 96
 defaults:
   plugins:
     completion:
