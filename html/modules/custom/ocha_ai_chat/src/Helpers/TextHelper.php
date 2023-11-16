@@ -18,7 +18,7 @@ class TextHelper {
    */
   public static function estimateTokenCount(string $text): int {
     $word_count = count(preg_split('/[^\p{L}\p{N}\']+/u', $text));
-    return floor($word_count * 0.75);
+    return floor(4 * $word_count / 3);
   }
 
 }
