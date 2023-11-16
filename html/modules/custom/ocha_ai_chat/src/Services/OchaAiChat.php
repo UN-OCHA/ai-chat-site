@@ -393,6 +393,9 @@ class OchaAiChat {
    * @return array
    *   Associative array with the index corresponding to the type of
    *   documents and the list of source documents for the source URL.
+   *
+   * @todo we should store which plugins were used to generate the embeddings
+   *   so that they can be regenerated if the plugins change.
    */
   protected function getSourceDocuments(array $source, int $limit): array {
     $plugin = $this->getSourcePlugin();
@@ -420,6 +423,11 @@ class OchaAiChat {
     // we could remove it.
     //
     // @todo ensure it's below 255 characters (ex: generate a hash?)
+    //
+    // @todo this is not good because the text splitter, text extractor plugins
+    // impact the generation of the embeddings. So we need to generate an index
+    // name with all the plugin IDs or the info about the plugins in the index
+    // so that we can regenerate the embeddings when the plugins change.
     $index = implode('__', [
       $this->getEmbeddingPlugin()->getPluginId(),
       $this->getEmbeddingPlugin()->getModelName(),
@@ -673,6 +681,9 @@ class OchaAiChat {
       return [];
     }
 
+    // Most models are English only and don't work well with other languages.
+    // Also the text splitter plugins don't work well with languages like
+    // Arabic or Chinese.
     $language = (new \Text_LanguageDetect())->detectSimple($content);
     // @todo retrieve that from the config.
     $allowed_languages = ['english'];
