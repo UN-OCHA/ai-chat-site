@@ -7,3 +7,23 @@ ocha_ai_chat_logs_form:
   css:
     theme:
       css/ocha_ai_chat_logs_form.css: {}
+
+plugin.source.reliefweb:
+  css:
+    theme:
+      components/plugins/source/reliefweb/rw-icons/rw-icons.css: {}
+      components/plugins/source/reliefweb/base.css: {}
+      components/plugins/source/reliefweb/filter.css: {}
+      components/plugins/source/reliefweb/filter-autocomplete.css: {}
+      components/plugins/source/reliefweb/filter-datepicker.css: {}
+      components/plugins/source/reliefweb/filter-selection.css: {}
+      components/plugins/source/reliefweb/river.css: {}
+      components/plugins/source/reliefweb/river-results.css: {}
+      components/plugins/source/reliefweb/river-article.css: {}
+      components/plugins/source/reliefweb/river-article-country-slug.css: {}
+      components/plugins/source/reliefweb/river-article-meta.css: {}
+      components/plugins/source/reliefweb/search.css: {}
+  js:
+    /libraries/simple-autocomplete/simpleautocomplete.js: {}
+    /libraries/simple-datepicker/simpledatepicker.js: {}
+    components/plugins/source/reliefweb/plugin.js: {}
