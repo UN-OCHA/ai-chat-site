@@ -2,8 +2,10 @@
 
 namespace Drupal\ocha_ai_chat\Form;
 
+use Drupal\Component\Utility\Html;
 use Drupal\Core\Ajax\AjaxResponse;
 use Drupal\Core\Ajax\MessageCommand;
+use Drupal\Core\Database\Connection;
 use Drupal\Core\Form\FormBase;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Session\AccountProxyInterface;
@@ -25,6 +27,13 @@ class OchaAiChatChatForm extends FormBase {
   protected AccountProxyInterface $currentUser;
 
   /**
+   * The database.
+   *
+   * @var \Drupal\Core\Database\Connection
+   */
+  protected Connection $database;
+
+  /**
    * The state service.
    *
    * @var \Drupal\Core\State\StateInterface
@@ -43,6 +52,8 @@ class OchaAiChatChatForm extends FormBase {
    *
    * @param \Drupal\Core\Session\AccountProxyInterface $current_user
    *   The current user.
+   * @param \Drupal\Core\Database\Connection $database
+   *   The database connection.
    * @param \Drupal\Core\State\StateInterface $state
    *   The state service.
    * @param \Drupal\ocha_ai_chat\Services\OchaAiChat $ocha_ai_chat
@@ -50,10 +61,12 @@ class OchaAiChatChatForm extends FormBase {
    */
   public function __construct(
     AccountProxyInterface $current_user,
+    Connection $database,
     StateInterface $state,
     OchaAiChat $ocha_ai_chat
   ) {
     $this->currentUser = $current_user;
+    $this->database = $database;
     $this->state = $state;
     $this->ochaAiChat = $ocha_ai_chat;
   }
@@ -64,6 +77,7 @@ class OchaAiChatChatForm extends FormBase {
   public static function create(ContainerInterface $container) {
     return new static(
       $container->get('current_user'),
+      $container->get('database'),
       $container->get('state'),
       $container->get('ocha_ai_chat.chat')
     );
@@ -72,25 +86,56 @@ class OchaAiChatChatForm extends FormBase {
   /**
    * {@inheritdoc}
    */
-  public function buildForm(array $form, FormStateInterface $form_state): array {
+  public function buildForm(array $form, FormStateInterface $form_state, ?bool $popup = NULL): array {
     $defaults = $this->ochaAiChat->getSettings();
 
     // Display the form instructions.
     if (!empty($defaults['form']['instructions']['value'])) {
+      $hide = $form_state->getValue([
+        'instructions',
+        'content',
+        'hide',
+      ], $this->database
+        ->select('ocha_ai_chat_preferences', 't')
+        ->fields('t', ['hide_instructions'])
+        ->condition('t.uid', $this->currentUser->id())
+        ->execute()
+        ?->fetchField()
+      );
+
       $form['instructions'] = [
         '#type' => 'details',
+        '#prefix' => '<div id="ocha-ai-chat-instructions" class="ocha-ai-chat-chat-form__instructions">',
+        '#suffix' => '</div>',
         '#title' => $this->t('Instructions'),
-        '#open' => TRUE,
+        '#open' => !empty($hide) ? FALSE : TRUE,
+        '#tree' => TRUE,
       ];
       $form['instructions']['content'] = [
         '#type' => 'processed_text',
         '#text' => $defaults['form']['instructions']['value'],
         '#format' => $defaults['form']['instructions']['format'],
       ];
+      $form['instructions']['content']['hide'] = [
+        '#type' => 'checkbox',
+        '#title' => $this->t('Do not show instructions anymore'),
+        '#default_value' => !empty($hide),
+        '#limit_validation_errors' => [
+          ['instructions', 'content', 'hide'],
+        ],
+        '#ajax' => [
+          'callback' => [$this, 'hideInstructions'],
+          'wrapper' => 'ocha-ai-chat-instructions',
+          'disable-refocus' => TRUE,
+        ],
+      ];
     }
 
     // Add the source widget.
     $form = $this->ochaAiChat->getSourcePlugin()->getSourceWidget($form, $form_state, $defaults);
+    if (isset($form['source'])) {
+      $form['source']['#attributes']['class'][] = 'ocha-ai-chat-chat-form__source';
+    }
 
     // Advanced options for test purposes.
     $form['advanced'] = [
@@ -98,6 +143,11 @@ class OchaAiChatChatForm extends FormBase {
       '#title' => $this->t('Advanced options'),
       '#open' => FALSE,
       '#access' => $this->currentUser->hasPermission('access ocha ai chat advanced features'),
+      '#attributes' => [
+        'class' => [
+          'ocha-ai-chat-chat-form__advanced',
+        ],
+      ],
     ];
 
     // Completion plugin.
@@ -122,7 +172,7 @@ class OchaAiChatChatForm extends FormBase {
     $history = $form_state->getValue('history', '');
     $form['chat'] = [
       '#type' => 'fieldset',
-      '#title' => $this->t('Chat'),
+      '#title' => $this->t('History'),
       '#access' => !empty($history),
       '#tree' => TRUE,
     ];
@@ -149,14 +199,21 @@ class OchaAiChatChatForm extends FormBase {
       ];
       $form['chat'][$index]['feedback'] = [
         '#type' => 'details',
-        '#title' => $this->t('Feedback'),
+        '#title' => $this->t('Please give feedback'),
         '#id' => 'chat-result-' . $index . '-feedback',
         '#open' => FALSE,
       ];
       $form['chat'][$index]['feedback']['satisfaction'] = [
         '#type' => 'select',
-        '#title' => $this->t('Satisfaction'),
-        '#options' => range(0, 5),
+        '#title' => $this->t('Rate the answer'),
+        '#options' => [
+          0 => $this->t('- Select -'),
+          1 => $this->t('Very bad'),
+          2 => $this->t('Bad'),
+          3 => $this->t('Passable'),
+          4 => $this->t('Good'),
+          5 => $this->t('Very good'),
+        ],
         '#default_value' => $form_state->getValue([
           'chat', $index, 'feedback', 'satisfaction',
         ]),
@@ -203,14 +260,15 @@ class OchaAiChatChatForm extends FormBase {
       '#button_type' => 'primary',
     ];
 
-    $form['#attached']['library'][] = 'ocha_ai_chat/ocha_ai_chat_chat_form';
+    $form['#attached']['library'][] = 'ocha_ai_chat/chat.form';
 
     // Submit the form via ajax.
-    $form['#prefix'] = '<div id="' . $this->getFormId() . '-wrapper">';
+    $id = Html::cleanCssIdentifier($this->getFormId() . '-wrapper');
+    $form['#prefix'] = '<div id="' . $id . '" class="' . $id . '">';
     $form['#suffix'] = '</div>';
     $form['actions']['submit']['#attributes']['class'][] = 'use-ajax-submit';
     $form['actions']['submit']['#ajax'] = [
-      'wrapper' => $this->getFormId() . '-wrapper',
+      'wrapper' => $id,
       'disable-refocus' => TRUE,
     ];
 
@@ -308,6 +366,32 @@ class OchaAiChatChatForm extends FormBase {
   }
 
   /**
+   * Hide the chat instructions and save the preference.
+   *
+   * @param array $form
+   *   The main form.
+   * @param \Drupal\Core\Form\FormStateInterface $form_state
+   *   The form state.
+   *
+   * @return array
+   *   The form.
+   */
+  public function hideInstructions(array &$form, FormStateInterface $form_state): array {
+    $triggering_element = $form_state->getTriggeringElement();
+
+    $hide = $form_state->getValue($triggering_element['#array_parents'], FALSE);
+
+    $this->database
+      ->upsert('ocha_ai_chat_preferences')
+      ->key('uid')
+      ->fields(['uid', 'hide_instructions'])
+      ->values([$this->currentUser->id(), !empty($hide) ? 1 : 0])
+      ->execute();
+
+    return $form['instructions'];
+  }
+
+  /**
    * Format a list of references.
    *
    * @param array $references
@@ -375,7 +459,7 @@ class OchaAiChatChatForm extends FormBase {
     return [
       '#theme' => 'item_list',
       '#items' => $items,
-      '#list_type' => 'ol',
+      '#list_type' => 'ul',
       '#attributes' => [
         'class' => [
           'ocha-ai-chat-reference-list',

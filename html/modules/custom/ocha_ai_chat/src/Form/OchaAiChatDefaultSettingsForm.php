@@ -243,6 +243,11 @@ class OchaAiChatDefaultSettingsForm extends FormBase {
         // @todo retrieve that from the configuration.
         '#max' => 10,
       ];
+      $form['defaults']['plugins']['source']['reliefweb']['editable'] = [
+        '#type' => 'checkbox',
+        '#title' => $this->t('Allowed editing the source'),
+        '#default_value' => !empty($defaults['plugins']['source']['reliefweb']['editable']),
+      ];
       $form['defaults']['plugins']['source']['reliefweb']['open'] = [
         '#type' => 'checkbox',
         '#title' => $this->t('Always open the widget'),

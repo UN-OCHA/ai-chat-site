@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "1e7d608350a33cf9a0c4810402b7afa5",
+    "content-hash": "1e011c8c894d778d6e70e7a76eb0a347",
     "packages": [
         {
             "name": "asm89/stack-cors",
@@ -8852,6 +8852,74 @@
                 }
             ],
             "time": "2023-11-16T16:21:57+00:00"
+        },
+        {
+            "name": "reliefweb/simple-autocomplete",
+            "version": "v1.3.2",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/UN-OCHA/rwint-simple-autocomplete.git",
+                "reference": "5d7b6236b3c680946a501da0c1aff1803853046f"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/UN-OCHA/rwint-simple-autocomplete/zipball/5d7b6236b3c680946a501da0c1aff1803853046f",
+                "reference": "5d7b6236b3c680946a501da0c1aff1803853046f",
+                "shasum": ""
+            },
+            "require": {
+                "php": ">=5.3.3"
+            },
+            "require-dev": {
+                "drupal/coder": "8.3.*",
+                "phpunit/phpunit": "8.3.*"
+            },
+            "type": "drupal-library",
+            "notification-url": "https://packagist.org/downloads/",
+            "description": "Simple standalone autocomplete javascript library",
+            "keywords": [
+                "javascript",
+                "php",
+                "reliefweb"
+            ],
+            "support": {
+                "source": "https://github.com/UN-OCHA/rwint-simple-autocomplete/tree/v1.3.2"
+            },
+            "time": "2022-10-25T05:01:03+00:00"
+        },
+        {
+            "name": "reliefweb/simple-datepicker",
+            "version": "v1.3.3",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/UN-OCHA/rwint-simple-datepicker.git",
+                "reference": "88d9fc1d8695593bb708f639a16011a97ce2fc61"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/UN-OCHA/rwint-simple-datepicker/zipball/88d9fc1d8695593bb708f639a16011a97ce2fc61",
+                "reference": "88d9fc1d8695593bb708f639a16011a97ce2fc61",
+                "shasum": ""
+            },
+            "require": {
+                "php": ">=5.3.3"
+            },
+            "require-dev": {
+                "drupal/coder": "8.3.*",
+                "phpunit/phpunit": "8.3.*"
+            },
+            "type": "drupal-library",
+            "notification-url": "https://packagist.org/downloads/",
+            "description": "Simple standalone datepicker javascript library",
+            "keywords": [
+                "javascript",
+                "php",
+                "reliefweb"
+            ],
+            "support": {
+                "source": "https://github.com/UN-OCHA/rwint-simple-datepicker/tree/v1.3.3"
+            },
+            "time": "2022-11-04T07:04:06+00:00"
         },
         {
             "name": "sebastian/cli-parser",

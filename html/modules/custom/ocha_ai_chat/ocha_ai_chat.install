@@ -137,6 +137,27 @@ function ocha_ai_chat_schema() {
     'primary key' => ['id'],
   ];
 
+  $schema['ocha_ai_chat_preferences'] = [
+    'fields' => [
+      'uid' => [
+        'description' => 'User ID.',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'size' => 'normal',
+        'not null' => TRUE,
+        'default' => 0,
+      ],
+      'hide_instructions' => [
+        'description' => '1 to hide the instructions on the chat form',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'size' => 'tiny',
+        'not null' => FALSE,
+      ],
+    ],
+    'primary key' => ['uid'],
+  ];
+
   return $schema;
 }
 
@@ -163,4 +184,16 @@ function ocha_ai_chat_update_10002(array &$sandbox) {
     $schema->dropTable('ocha_ai_chat_logs');
   }
   $schema->createTable('ocha_ai_chat_logs', ocha_ai_chat_schema()['ocha_ai_chat_logs']);
+}
+
+/**
+ * Implements hook_update_N().
+ *
+ * Add the OCHA AI chat preferences table.
+ */
+function ocha_ai_chat_update_10003(array &$sandbox) {
+  $schema = \Drupal::database()->schema();
+  if (!$schema->tableExists('ocha_ai_chat_preferences')) {
+    $schema->createTable('ocha_ai_chat_preferences', ocha_ai_chat_schema()['ocha_ai_chat_preferences']);
+  }
 }

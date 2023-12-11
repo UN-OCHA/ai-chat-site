@@ -19,7 +19,7 @@ class Sentence extends TextSplitterPluginBase {
   /**
    * {@inheritdoc}
    */
-  public function splitText(string $text): array {
+  public function splitText(string $text, ?int $length = NULL, ?int $overlap = NULL): array {
     $length = $this->getPluginSetting('length');
     $overlap = $this->getPluginSetting('overlap');
 
