@@ -122,30 +122,45 @@ class OchaAiChatTestJobTaggingForm extends FormBase {
     if (!empty($text)) {
       $embeddings = $this->getEmbeddings($text, TRUE);
 
+      $types = ['max_mean', 'max', 'mean', 'mean_with_cutoff'];
+
+      $results = [
+        'full' => $this->getSimilarTerms($embeddings, FALSE, $types),
+        'average' => $this->getSimilarTerms($embeddings, TRUE, $types),
+      ];
+
       $form_state->setValue('results', [
+        'max_mean' => [
+          'title' => $this->t('Max x Mean similarity of terms against all text chunks'),
+          'results' => $results['full']['max_mean'],
+        ],
+        'max_mean_average' => [
+          'title' => $this->t('Max x Mean similarity of terms against average of full text'),
+          'results' => $results['average']['max_mean'],
+        ],
         'max' => [
           'title' => $this->t('Max similarity of terms against all text chunks'),
-          'results' => $this->getSimilarTerms($embeddings, FALSE, 'max'),
+          'results' => $results['full']['max'],
         ],
         'max_average' => [
           'title' => $this->t('Max similarity of terms against average of full text'),
-          'results' => $this->getSimilarTerms($embeddings, TRUE, 'max'),
+          'results' => $results['average']['max'],
         ],
         'mean' => [
           'title' => $this->t('Mean similarity of terms against all text chunks'),
-          'results' => $this->getSimilarTerms($embeddings, FALSE, 'mean'),
+          'results' => $results['full']['mean'],
         ],
         'mean_average' => [
           'title' => $this->t('Mean similarity of terms against average of full text'),
-          'results' => $this->getSimilarTerms($embeddings, TRUE, 'mean_with_cutoff'),
+          'results' => $results['average']['mean'],
         ],
         'mean_with_cutoff' => [
           'title' => $this->t('Mean similarity of terms against all text chunks, with cutoff'),
-          'results' => $this->getSimilarTerms($embeddings, FALSE, 'mean'),
+          'results' => $results['full']['mean_with_cutoff'],
         ],
         'mean_with_cutoff_average' => [
           'title' => $this->t('Mean similarity of terms against average of full text, with cutoff'),
-          'results' => $this->getSimilarTerms($embeddings, TRUE, 'mean_with_cutoff'),
+          'results' => $results['average']['mean_with_cutoff'],
         ],
       ]);
     }
@@ -213,15 +228,15 @@ class OchaAiChatTestJobTaggingForm extends FormBase {
    * @param bool $average_embeddings
    *   If TRUE, generate the mean of the embeddings and compute the similarities
    *   against it.
-   * @param string $type
-   *   Type of formula to use to compare the similarity scores. One of "max",
-   *   "mean" or "mean_with_cutoff".
+   * @param array $types
+   *   Types of formula to use to compare the similarity scores. One of "max",
+   *   "mean" or "mean_with_cutoff" or "max_mean".
    *
    * @return array
    *   Associative array with vacobularies as keys and list of terms and their
    *   similarity score as values.
    */
-  protected function getSimilarTerms(array $embeddings, bool $average_embeddings = FALSE, string $type = 'max'): array {
+  protected function getSimilarTerms(array $embeddings, bool $average_embeddings = FALSE, array $types = ['max']): array {
     if ($average_embeddings) {
       $embeddings = [
         [
@@ -243,29 +258,34 @@ class OchaAiChatTestJobTaggingForm extends FormBase {
           $similarities[] = VectorHelper::cosineSimilarity($term_embedding, $item['embedding']);
         }
 
-        switch ($type) {
-          case 'max':
-            $results[$term] = max($similarities);
-            break;
+        foreach ($types as $type) {
+          switch ($type) {
+            case 'max':
+              $results[$type][$term] = max($similarities);
+              break;
 
-          case 'mean':
-            $results[$term] = array_sum($similarities) / count($similarities);
-            break;
+            case 'mean':
+              $results[$type][$term] = array_sum($similarities) / count($similarities);
+              break;
 
-          case 'mean_with_cutoff':
-            $similarities = $this->filterSimilarities($similarities, 0.2);
-            $results[$term] = array_sum($similarities) / count($similarities);
-            break;
+            case 'mean_with_cutoff':
+              $similarities = $this->filterSimilarities($similarities, 0.2);
+              $results[$type][$term] = array_sum($similarities) / count($similarities);
+              break;
 
-          default:
-            $results[$term] = max($similarities);
+            // Max x mean.
+            default:
+              // Max x mean.
+              $results[$type][$term] = max($similarities) * array_sum($similarities) / count($similarities);
+          }
         }
       }
 
       // Sort by similarity score descending.
-      arsort($results);
-
-      $vocabularies[$vocabulary] = $results;
+      foreach ($types as $type) {
+        arsort($results[$type]);
+        $vocabularies[$type][$vocabulary] = $results[$type];
+      }
     }
     return $vocabularies;
   }
