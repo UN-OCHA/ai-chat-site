@@ -447,6 +447,7 @@
           this.updateRiverResults(json);
           this.populateRiverList(json);
           this.toggleLoading(false);
+          this.updateFilterSelection(false);
         })
         .catch(error => {
           this.displayNoResults();
@@ -570,17 +571,17 @@
             this.createElement('dt', {
               'class': [
                 articleBaseClass + '__meta__tag-label',
-                articleBaseClass + '__meta__tag-label--published'
+                articleBaseClass + '__meta__tag-label--posted'
               ]
-            }, this.labels.article.published),
+            }, this.labels.article.posted),
             this.createElement('dd', {
               'class': [
                 articleBaseClass + '__meta__tag-value',
-                articleBaseClass + '__meta__tag-value--published'
+                articleBaseClass + '__meta__tag-value--posted'
               ]
             }, this.createElement('time', {
-              'datetime': fields.date.original
-            }, this.createDate(fields.date.original, false).format('D MMM YYYY')))
+              'datetime': fields.date.created
+            }, this.createDate(fields.date.created, false).format('D MMM YYYY')))
           ]);
 
           const footer = this.createElement('footer', {
@@ -713,7 +714,7 @@
         if (resource && labels[resource] && labels[resource][filter.value]) {
           filter.label = labels[resource][filter.value];
         }
-        this.createSelectedFilter(filter.field, filter.value, filter.label, filter.operator, false);
+        this.createSelectedFilter(filter.field, filter.value, filter.label, filter.operator, false, false);
       });
 
       this.filterSelection.setAttribute('data-selection', filters.length);
@@ -999,6 +1000,9 @@
         }, this.labels.filterSelectionTitle)
       ]);
 
+      // Parse the advanced search paramerer and create the selected filters.
+      this.parseAdvancedSearch();
+
       // Remove a selected filter when clicking on its remove button
       // and update the operators to ensure consistency.
       this.filterSelection.addEventListener('click', event => {
@@ -1110,9 +1114,6 @@
         'class': this.baseClass + '__action',
         'data-apply': ''
       }, this.labels.apply);
-
-      // Hide/show the buttons.
-      this.updateFilterSelection();
 
       // Clear advanced search.
       // @todo review how to clear the selection.
@@ -1324,7 +1325,10 @@
 
       const select = this.createElement('select', {
         'id': id,
-        'class': this.baseClass + '__operator-selector'
+        'class': [
+          this.baseClass + '__operator-selector',
+          this.baseClass + '__widget__select'
+        ]
       });
       const label = this.createLabel(id, this.labels.operatorSelector, {
         'class': this.baseClass + '__operator-selector-label'
@@ -1363,7 +1367,10 @@
       });
       const select = this.createElement('select', {
         'id': id,
-        'class': this.baseClass + '__field-selector'
+        'class': [
+          this.baseClass + '__field-selector',
+          this.baseClass + '__widget__select'
+        ]
       }, options);
       const label = this.createLabel(id, this.labels.fieldSelector, {
         'class': this.baseClass + '__field-selector-label'
@@ -1593,8 +1600,12 @@
      *   Field label.
      * @param {String} operator
      *   Operator.
+     * @param {Boolean} update
+     *   If TRUE update the operator switchers to ensure consistency.
+     * @param {Boolean} announce
+     *   If TRUE announce the change to the filter selection.
      */
-    createSelectedFilter(field, value, label, operator, announce = true) {
+    createSelectedFilter(field, value, label, operator, update = true, announce = true) {
       let previous = null;
 
       // In simplified mode, get the filter after which to insert the new one.
@@ -1648,7 +1659,9 @@
 
         // Ensure the other operators and the operator selector have
         // consistent values.
-        this.updateOperatorSwitchers();
+        if (update) {
+          this.updateOperatorSwitchers();
+        }
       }
 
       // Announce the added filter and the resulting full selection.
@@ -1729,14 +1742,14 @@
     createOperatorSwitchers() {
       // Update the operator switchers in the selection.
       const elements = this.filterSelection.querySelectorAll('[data-operator]');
-      if (elements) {
+      if (elements.length > 0) {
         for (const element of elements) {
           this.createOperatorSwitcher(element);
         }
-      }
 
-      // Update the operators.
-      this.updateOperatorSwitchers();
+        // Update the operators.
+        this.updateOperatorSwitchers();
+      }
     }
 
     /**
@@ -2450,8 +2463,11 @@
 
     /**
      * Update the filter count in the selection and hide/show the actions.
+     *
+     * @param {Boolean} update
+     *   Whether to update the river URL or not.
      */
-    updateFilterSelection() {
+    updateFilterSelection(update = true) {
       const count = this.filterSelection.querySelectorAll('[data-value]').length;
       this.filterSelection.setAttribute('data-selection', count);
 
@@ -2471,7 +2487,9 @@
       }
 
       // Update the river URL with the new parameters.
-      this.updateRiverUrl();
+      if (update) {
+        this.updateRiverUrl();
+      }
 
       // In case of changes to the selection, update the apply button to notify
       // the user to click on it to update the list.

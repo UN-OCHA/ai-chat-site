@@ -110,6 +110,11 @@
 .oaic-rw__action[data-clear]:focus {
   color: var(--cd-reliefweb-brand-red--dark);
 }
+.oaic-rw__action[data-apply]:hover,
+.oaic-rw__action[data-apply]:active,
+.oaic-rw__action[data-apply]:focus {
+  background: var(--cd-reliefweb-brand-red--dark);
+}
 .oaic-rw__action[data-apply="true"] {
   position: relative;
   padding-left: 40px;

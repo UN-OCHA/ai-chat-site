@@ -36,9 +36,12 @@
 .ocha-ai-chat-chat-form .ocha-ai-chat-result dt {
   font-weight: bold;
 }
+.ocha-ai-chat-chat-form .ocha-ai-chat-result dd {
+  margin-left: 24px;
+}
 
 .ocha-ai-chat-chat-form .ocha-ai-chat-reference-list {
-  margin-left: -1rem;
+  padding-left: 0;
 }
 .ocha-ai-chat-chat-form .ocha-ai-chat-reference {
   display: inline;
@@ -58,4 +61,24 @@
 }
 .ocha-ai-chat-chat-form input[type="text"] {
   max-width: 100%;
+}
+
+/* Hide everything except the chat form content. */
+.ocha-ai-chat-popup {
+  background-color: white;
+}
+.ocha-ai-chat-popup *:has( ~ main) {
+    display: none;
+}
+.ocha-ai-chat-popup main ~ * {
+    display: none;
+}
+.ocha-ai-chat-popup body > *:not(:has(main)) {
+    display: none;
+}
+.ocha-ai-chat-popup main {
+  padding: 24px;
+}
+.ocha-ai-chat-popup main h1 {
+  font-size: 1.5rem;
 }
