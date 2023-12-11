@@ -306,7 +306,7 @@ class OchaAiChatLogsForm extends FormBase {
       '#type' => 'pager',
     ];
 
-    $form['#attached']['library'][] = 'ocha_ai_chat/ocha_ai_chat_logs_form';
+    $form['#attached']['library'][] = 'ocha_ai_chat/logs.form';
 
     return $form;
   }

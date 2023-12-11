@@ -6,6 +6,15 @@ ocha_ai_chat.chat_form:
   requirements:
     _user_is_logged_in: 'TRUE'
     _permission: access ocha ai chat
+ocha_ai_chat.chat_form.popup:
+  path: '/ai/chat/popup'
+  defaults:
+    _form: '\Drupal\ocha_ai_chat\Form\OchaAiChatChatForm'
+    _title: 'Ask the documents'
+    popup: true
+  requirements:
+    _user_is_logged_in: 'TRUE'
+    _permission: access ocha ai chat
 ocha_ai_chat.admin_config:
   path: '/admin/config/ocha-ai-chat'
   defaults:

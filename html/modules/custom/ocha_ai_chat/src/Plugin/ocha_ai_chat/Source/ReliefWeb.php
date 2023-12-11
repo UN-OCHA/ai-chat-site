@@ -2,16 +2,23 @@
 
 namespace Drupal\ocha_ai_chat\Plugin\ocha_ai_chat\Source;
 
+use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Component\Render\MarkupInterface;
+use Drupal\Core\Cache\CacheBackendInterface;
+use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Link;
+use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\Core\Render\Element;
 use Drupal\Core\Render\Markup;
 use Drupal\Core\Url;
 use Drupal\ocha_ai_chat\Helpers\LocalizationHelper;
 use Drupal\ocha_ai_chat\Plugin\SourcePluginBase;
+use GuzzleHttp\ClientInterface;
 use GuzzleHttp\Exception\BadResponseException;
 use GuzzleHttp\Promise\Utils;
+use Symfony\Component\DependencyInjection\ContainerInterface;
+use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\Uid\Uuid;
 
 /**
@@ -26,6 +33,13 @@ use Symfony\Component\Uid\Uuid;
 class ReliefWeb extends SourcePluginBase {
 
   /**
+   * The request stack.
+   *
+   * @var \Symfony\Component\HttpFoundation\RequestStack
+   */
+  protected RequestStack $requestStack;
+
+  /**
    * ReliefWeb API URL.
    *
    * @var string
@@ -38,6 +52,70 @@ class ReliefWeb extends SourcePluginBase {
    * @var string
    */
   protected string $converterUrl;
+
+  /**
+   * Constructs a \Drupal\Component\Plugin\PluginBase object.
+   *
+   * @param array $configuration
+   *   A configuration array containing information about the plugin instance.
+   * @param string $plugin_id
+   *   The plugin_id for the plugin instance.
+   * @param mixed $plugin_definition
+   *   The plugin implementation definition.
+   * @param \Drupal\Core\Config\ConfigFactoryInterface $config_factory
+   *   The config factory service.
+   * @param \Drupal\Core\Logger\LoggerChannelFactoryInterface $logger_factory
+   *   The logger factory service.
+   * @param \GuzzleHttp\ClientInterface $http_client
+   *   The HTTP client service.
+   * @param \Drupal\Core\Cache\CacheBackendInterface $cache_backend
+   *   The cache backend.
+   * @param \Drupal\Component\Datetime\TimeInterface $time
+   *   The time service.
+   * @param \Symfony\Component\HttpFoundation\RequestStack $request_stack
+   *   The request stack.
+   */
+  public function __construct(
+    array $configuration,
+    $plugin_id,
+    $plugin_definition,
+    ConfigFactoryInterface $config_factory,
+    LoggerChannelFactoryInterface $logger_factory,
+    ClientInterface $http_client,
+    CacheBackendInterface $cache_backend,
+    TimeInterface $time,
+    RequestStack $request_stack
+  ) {
+    parent::__construct(
+      $configuration,
+      $plugin_id,
+      $plugin_definition,
+      $config_factory,
+      $logger_factory,
+      $http_client,
+      $cache_backend,
+      $time
+    );
+
+    $this->requestStack = $request_stack;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public static function create(ContainerInterface $container, array $configuration, $plugin_id, $plugin_definition) {
+    return new static(
+      $configuration,
+      $plugin_id,
+      $plugin_definition,
+      $container->get('config.factory'),
+      $container->get('logger.factory'),
+      $container->get('http_client'),
+      $container->get('cache.ocha_ai_cache'),
+      $container->get('datetime.time'),
+      $container->get('request_stack')
+    );
+  }
 
   /**
    * {@inheritdoc}
@@ -105,12 +183,21 @@ class ReliefWeb extends SourcePluginBase {
    * {@inheritdoc}
    */
   public function getSourceWidget(array $form, FormStateInterface $form_state, array $defaults): array {
-    $editable = empty($defaults['plugins']['source']['reliefweb']['url']);
-    $display = $editable || !empty($defaults['plugins']['source']['reliefweb']['display']);
-    $open = !empty($defaults['plugins']['source']['reliefweb']['open']);
+    $plugin_defaults = $defaults['plugins']['source']['reliefweb'] ?? [];
+    $plugin_defaults += ['url' => '', 'limit' => 0];
 
-    $source_url = $form_state->getValue(['source', 'url']) ?? $defaults['plugins']['source']['reliefweb']['url'] ?? '';
-    $source_limit = $form_state->getValue(['source', 'limit']) ?? $defaults['plugins']['source']['reliefweb']['limit'] ?? 5;
+    $editable = !empty($plugin_defaults['editable']);
+    $display = $editable || !empty($plugin_defaults['display']);
+    $open = !empty($plugin_defaults['open']);
+
+    $query = $this->requestStack->getCurrentRequest()?->query;
+
+    $source_url = $form_state->getValue(['source', 'url'], $plugin_defaults['url']) ?: $query?->get('url') ?? '';
+    $source_limit = $form_state->getValue(['source', 'limit'], $plugin_defaults['limit']) ?: $query?->get('limit') ?? 1;
+
+    if (!$this->checkRiverUrl($source_url, FALSE)) {
+      $source_url = 'https://reliefweb.int/updates?view=reports';
+    }
 
     // Source of documents.
     $form['source'] = [
@@ -138,7 +225,7 @@ class ReliefWeb extends SourcePluginBase {
         '#type' => 'number',
         '#title' => $this->t('Document limit'),
         '#description' => $this->t('Maximum number of documents to chat against.'),
-        '#default_value' => min($source_limit, 1),
+        '#default_value' => $source_limit,
         '#required' => TRUE,
         '#min' => 1,
         // @todo retrieve that from the configuration.
@@ -196,7 +283,7 @@ class ReliefWeb extends SourcePluginBase {
         'baseId' => 'oaic-rw',
         'baseClass' => 'oaic-rw',
         'baseUrl' => 'https://reliefweb.int',
-        'riverUrl' => 'https://reliefweb.int/updates?view=reports',
+        'riverUrl' => $source_url ?: 'https://reliefweb.int/updates?view=reports',
         'apiUrl' => $this->buildApiUrl('reports', [], FALSE),
         // Base payload.
         'apiPayload' => [
@@ -237,7 +324,8 @@ class ReliefWeb extends SourcePluginBase {
             'value' => 'en',
           ],
           'sort' => [
-            'date.original:desc',
+            // @todo this is to be similar to https://reliefweb.int/updates but
+            // maybe we want to sort by original publication date.
             'date.created:desc',
             'id:desc',
           ],
@@ -379,7 +467,7 @@ class ReliefWeb extends SourcePluginBase {
           ],
         ],
         'search' => '',
-        'limit' => $source_limit,
+        'limit' => 10,
         'searchHelp' => 'https://reliefweb.int/search-help',
       ];
 
@@ -471,19 +559,23 @@ class ReliefWeb extends SourcePluginBase {
    *
    * @param string $url
    *   River URL.
+   * @param bool $log_missing
+   *   If TRUE, adds a log if the url is empty.
    *
    * @return bool
    *   TRUE if the URL is valid.
    */
-  protected function checkRiverUrl(string $url): bool {
+  protected function checkRiverUrl(string $url, bool $log_missing = TRUE): bool {
     if (empty($url)) {
-      $this->getLogger()->error('Missing ReliefWeb river URL.');
+      if ($log_missing) {
+        $this->getLogger()->error('Missing ReliefWeb river URL.');
+      }
       return FALSE;
     }
 
     // Ensure the river URL is for reports.
     // @todo Handle other rivers at some point?
-    if (basename(parse_url($url, \PHP_URL_PATH)) !== 'updates') {
+    if (preg_match('@^https?://reliefweb\.int/updates([?#]|$)@', $url) !== 1) {
       $this->getLogger()->error('URL not a ReliefWeb updates river.');
       return FALSE;
     }
@@ -525,7 +617,7 @@ class ReliefWeb extends SourcePluginBase {
    */
   protected function adjustApiPayload(array $payload, int $limit): array {
     $payload['limit'] = $limit;
-    $payload['sort'] = ['date.original:desc', 'id:desc'];
+    $payload['sort'] = ['date.created:desc', 'id:desc'];
 
     // @todo Review which fields could be useful for filtering (ex: country).
     $payload['fields']['include'] = [
