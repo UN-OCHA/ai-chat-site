@@ -20,7 +20,7 @@ class Token extends TextSplitterPluginBase {
   /**
    * {@inheritdoc}
    */
-  public function splitText(string $text): array {
+  public function splitText(string $text, ?int $length = NULL, ?int $overlap = NULL): array {
     $lines = explode('##L##', trim(preg_replace('/(\n{1,})/u', '$1##L##', $text)));
 
     foreach ($lines as $index => $line) {
@@ -30,8 +30,8 @@ class Token extends TextSplitterPluginBase {
       ];
     }
 
-    $max_token_count = $this->getPluginSetting('length');
-    $overlap_token_count = $this->getPluginSetting('overlap');
+    $max_token_count = $length ?? $this->getPluginSetting('length');
+    $overlap_token_count = $overlap ?? $this->getPluginSetting('overlap');
 
     $total_lines = count($lines);
     $total_token_count = TextHelper::estimateTokenCount($text);
@@ -67,15 +67,9 @@ class Token extends TextSplitterPluginBase {
       $group_token_count += $line['token_count'];
     }
 
-    // Add the remaining lines to the last group.
+    // Add the remaining lines.
     if (!empty($group)) {
-      $last = array_key_last($groups);
-      if (isset($last)) {
-        $groups[$last] += $group;
-      }
-      else {
-        $groups[] = $group;
-      }
+      $groups[] = $group;
     }
 
     foreach ($groups as $index => $group) {

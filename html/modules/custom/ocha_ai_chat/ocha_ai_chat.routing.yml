@@ -43,3 +43,12 @@ ocha_ai_chat.logs_form:
   requirements:
     _user_is_logged_in: 'TRUE'
     _permission: view ocha ai chat logs
+# @todo remove.
+ocha_ai_chat.test_job_tagging_form:
+  path: '/ai/test-job-tagging'
+  defaults:
+    _form: '\Drupal\ocha_ai_chat\Form\OchaAiChatTestJobTaggingForm'
+    _title: 'Test Job Tagging'
+  requirements:
+    _user_is_logged_in: 'TRUE'
+    _permission: access ocha ai chat
