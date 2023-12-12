@@ -257,7 +257,7 @@ class OchaAiChat {
     }
 
     // Generate the embedding for the question.
-    $embedding = $embedding_plugin->generateEmbedding($question);
+    $embedding = $embedding_plugin->generateEmbedding($question, TRUE);
     $data['stats']['Get question embedding'] = 0 - $time + ($time = microtime(TRUE));
 
     // Abort if we were unable to generate the embedding for the question as

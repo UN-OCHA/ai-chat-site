@@ -31,7 +31,7 @@ class AzureOpenAi extends EmbeddingPluginBase {
   /**
    * {@inheritdoc}
    */
-  public function generateEmbeddings(array $texts): array {
+  public function generateEmbeddings(array $texts, bool $query = FALSE): array {
     if (empty($texts)) {
       return [];
     }
@@ -72,7 +72,7 @@ class AzureOpenAi extends EmbeddingPluginBase {
   /**
    * {@inheritdoc}
    */
-  public function generateEmbedding(string $text): array {
+  public function generateEmbedding(string $text, bool $query = FALSE): array {
     if (empty($text)) {
       return [];
     }
@@ -172,6 +172,15 @@ class AzureOpenAi extends EmbeddingPluginBase {
         ->make();
     }
     return $this->apiClient;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getModels(): array {
+    return [
+      'text-embedding-ada-002' => $this->t('ADA 2'),
+    ];
   }
 
 }

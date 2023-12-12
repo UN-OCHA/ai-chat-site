@@ -129,4 +129,13 @@ class AzureOpenAi extends CompletionPluginBase {
     return $this->apiClient;
   }
 
+  /**
+   * {@inheritdoc}
+   */
+  public function getModels(): array {
+    return [
+      'gpt-3.5-turbo' => $this->t('GPT 3.5 turbo'),
+    ];
+  }
+
 }

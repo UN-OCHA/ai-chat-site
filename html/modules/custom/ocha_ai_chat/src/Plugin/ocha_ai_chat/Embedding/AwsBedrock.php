@@ -28,14 +28,19 @@ class AwsBedrock extends EmbeddingPluginBase {
   /**
    * {@inheritdoc}
    */
-  public function generateEmbeddings(array $texts): array {
+  public function generateEmbeddings(array $texts, bool $query = FALSE): array {
     if (empty($texts)) {
       return [];
     }
 
-    // @todo the AWS Bedrock embedding API doesn't support generating embeddings
-    // for several texts at once so we need to call the API for each request.
-    // Investigate using parallel requests (check quota, rate limits etc.).
+    // @todo the AWS Bedrock Titan embedding model doesn't support generating
+    // embeddings for several texts at once so we need to call the API for each
+    // request. Investigate using parallel requests (check quota, rate limits
+    // etc.).
+    //
+    // @todo the Cohere models support several texts up to 2048 tokens which is
+    // lower than the Titan model context. We could propably generate embeddings
+    // for 3/4 texts at conce. Review.
     $embeddings = [];
     foreach ($texts as $text) {
       $embeddings[] = $this->requestEmbedding($text);
@@ -46,7 +51,7 @@ class AwsBedrock extends EmbeddingPluginBase {
   /**
    * {@inheritdoc}
    */
-  public function generateEmbedding(string $text): array {
+  public function generateEmbedding(string $text, bool $query = FALSE): array {
     if (empty($text)) {
       return [];
     }
@@ -65,7 +70,9 @@ class AwsBedrock extends EmbeddingPluginBase {
    * Perform a request against the API to get the embeddings for the text.
    *
    * @param string $text
-   *   Text.
+   *   Text for which to generate the embedding.
+   * @param bool $query
+   *   Whether the request is for embedding for a search query or document.
    *
    * @return array
    *   Embedding for the text.
@@ -73,16 +80,14 @@ class AwsBedrock extends EmbeddingPluginBase {
    * @throws \Exception
    *   Throw an exception if the generation of the embeddding fails.
    */
-  protected function requestEmbedding(string $text): array {
+  protected function requestEmbedding(string $text, bool $query = FALSE): array {
     if (empty($text)) {
       return [];
     }
 
     $payload = [
       'accept' => 'application/json',
-      'body' => json_encode([
-        'inputText' => $text,
-      ]),
+      'body' => json_encode($this->generateRequestBody($text, $query)),
       'contentType' => 'application/json',
       'modelId' => $this->getPluginSetting('model'),
     ];
@@ -106,7 +111,59 @@ class AwsBedrock extends EmbeddingPluginBase {
       throw $exception;
     }
 
-    return $data['embedding'];
+    return $this->parseResponseBody($data);
+  }
+
+  /**
+   * Generate the request body for the embedding.
+   *
+   * @param string $text
+   *   Text for which to generate the embedding.
+   * @param bool $query
+   *   Whether the request is for embedding for a search query or document.
+   *
+   * @return array
+   *   Request body.
+   */
+  protected function generateRequestBody(string $text, bool $query = FALSE): array {
+    switch ($this->getPluginSetting('model')) {
+      case 'amazon.titan-embed-text-v1':
+        return [
+          'inputText' => $text,
+        ];
+
+      case 'cohere.embed-english-v3':
+      case 'cohere.embed-multilingual-v3':
+        return [
+          'texts' => [$text],
+          'input_type' => $query ? 'search_query' : 'search_document',
+          'truncate' => 'NONE',
+        ];
+    }
+
+    return [];
+  }
+
+  /**
+   * Parse the reponse from the embedding API.
+   *
+   * @param array $data
+   *   Decoded response.
+   *
+   * @return array
+   *   Embedding.
+   */
+  protected function parseResponseBody(array $data): array {
+    switch ($this->getPluginSetting('model')) {
+      case 'amazon.titan-embed-text-v1':
+        return $data['embedding'];
+
+      case 'cohere.embed-english-v3':
+      case 'cohere.embed-multilingual-v3':
+        return reset($data['embeddings']);
+    }
+
+    return [];
   }
 
   /**
@@ -199,6 +256,17 @@ class AwsBedrock extends EmbeddingPluginBase {
     $form['plugins'][$plugin_type][$plugin_id]['max_tokens']['#weight'] = 4;
 
     return $form;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getModels(): array {
+    return [
+      'amazon.titan-embed-text-v1' => $this->t('Amazon - Titan'),
+      'cohere.embed-english-v3' => $this->t('Cohere - English'),
+      'cohere.embed-multilingual-v3' => $this->t('Cohere - Multilingual'),
+    ];
   }
 
 }

@@ -245,7 +245,7 @@ class OchaAiChatDefaultSettingsForm extends FormBase {
       ];
       $form['defaults']['plugins']['source']['reliefweb']['editable'] = [
         '#type' => 'checkbox',
-        '#title' => $this->t('Allowed editing the source'),
+        '#title' => $this->t('Allow editing the source'),
         '#default_value' => !empty($defaults['plugins']['source']['reliefweb']['editable']),
       ];
       $form['defaults']['plugins']['source']['reliefweb']['open'] = [
