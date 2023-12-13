@@ -34,9 +34,10 @@ abstract class EmbeddingPluginBase extends PluginBase implements EmbeddingPlugin
     $config = $this->getConfiguration() + $this->defaultConfiguration();
 
     $form['plugins'][$plugin_type][$plugin_id]['model'] = [
-      '#type' => 'textfield',
+      '#type' => 'select',
       '#title' => $this->t('Model'),
-      '#description' => $this->t('ID of the model.'),
+      '#description' => $this->t('AI model.'),
+      '#options' => $this->getModels(),
       '#default_value' => $config['model'] ?? NULL,
       '#required' => TRUE,
     ];
