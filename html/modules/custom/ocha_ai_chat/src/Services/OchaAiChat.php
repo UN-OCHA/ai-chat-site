@@ -534,6 +534,7 @@ class OchaAiChat {
       // embeddings. This is cheaper than calling the embedding API though we
       // lose in accuracy.
       if (!empty($content['pages'])) {
+        $content['pages'] = array_values($content['pages']);
         $content['embedding'] = $this->getMeanEmbedding($content['pages']);
       }
 
