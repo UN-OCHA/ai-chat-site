@@ -27,9 +27,10 @@ abstract class CompletionPluginBase extends PluginBase implements CompletionPlug
     $config = $this->getConfiguration() + $this->defaultConfiguration();
 
     $form['plugins'][$plugin_type][$plugin_id]['model'] = [
-      '#type' => 'textfield',
+      '#type' => 'select',
       '#title' => $this->t('Model'),
-      '#description' => $this->t('ID of the model.'),
+      '#description' => $this->t('AI Model.'),
+      '#options' => $this->getModels(),
       '#default_value' => $config['model'] ?? NULL,
       '#required' => TRUE,
     ];
@@ -91,9 +92,14 @@ abstract class CompletionPluginBase extends PluginBase implements CompletionPlug
    */
   public function generateContext(string $question, array $passages): string {
     $context = [];
+
     foreach ($passages as $passage) {
-      $context[] = $passage['text'];
+      $context[] = trim($passage['text']);
+      if (isset($passage['reference'])) {
+        $context[] = 'Source: ' . $passage['reference'];
+      }
     }
+
     return implode("\n\n", $context);
   }
 

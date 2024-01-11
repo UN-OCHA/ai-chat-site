@@ -2,16 +2,14 @@ plugins:
   completion:
     aws_bedrock:
       prompt_template: |-
-        SYSTEM: You are a helpful assistant. Answer the user's question concisely and exactly, using only the following information. Write complete sentences. Say you don't know if you cannot answer.
-
         {{ context }}
 
-        QUESTION: {{ question }}
+        Based solely on the information above, please answer the following question. Please do not make things up and say you don't know if you cannot answer.
 
-        ANSWER:
+        {{ question }}
     azure_openai:
       prompt_template: |-
-        You are a helpful assistant. Answer the user's question concisely and exactly, using only the following information. Write complete sentences. Say you don't know if you cannot answer.
+        Based solely on the information below, please answer the user's question. Please do not make things up and say you don't know if you cannot answer.
 
         {{ context }}
   source:
@@ -28,6 +26,9 @@ plugins:
     sentence:
       length: 4
       overlap: 2
+    token:
+      length: 384
+      overlap: 96
 defaults:
   plugins:
     completion:
@@ -40,6 +41,6 @@ defaults:
       'application/pdf':
         plugin_id: 'mupdf'
     text_splitter:
-      plugin_id: sentence
+      plugin_id: token
     vector_store:
       plugin_id: elasticsearch

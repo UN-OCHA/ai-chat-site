@@ -37,8 +37,9 @@ class AzureOpenAi extends CompletionPluginBase {
       return '';
     }
 
-    $prompt = strtr($this->getPluginSetting('prompt_template'), [
-      "\r" => '',
+    $template = strtr($this->getPluginSetting('prompt_template'), ["\r" => '']);
+
+    $prompt = strtr($template, [
       '{{ context }}' => $context,
       '{{ question }}' => $question,
     ]);
@@ -126,6 +127,15 @@ class AzureOpenAi extends CompletionPluginBase {
         ->make();
     }
     return $this->apiClient;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getModels(): array {
+    return [
+      'gpt-3.5-turbo' => $this->t('GPT 3.5 turbo'),
+    ];
   }
 
 }

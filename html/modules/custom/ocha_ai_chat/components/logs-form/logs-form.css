@@ -1,6 +1,9 @@
 .ocha-ai-chat-logs-form tr td {
   vertical-align: top;
 }
+.ocha-ai-chat-logs-form td details {
+  margin: 0;
+}
 .ocha-ai-chat-logs-form td details[open] {
   position: fixed;
   z-index: 100;

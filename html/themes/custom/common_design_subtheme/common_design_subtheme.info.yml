@@ -3,7 +3,7 @@ description: OCHA Common Design sub-theme
 core_version_requirement: ^9 || ^10
 type: theme
 base theme: common_design
-logo: 'img/logos/ocha-lockup-blue.svg'
+logo: 'img/logos/rw-chat-with-documents.svg'
 
 # Regions
 regions:

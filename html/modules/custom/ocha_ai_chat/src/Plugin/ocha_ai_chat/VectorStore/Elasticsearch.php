@@ -3,6 +3,7 @@
 namespace Drupal\ocha_ai_chat\Plugin\ocha_ai_chat\VectorStore;
 
 use Drupal\Core\Form\FormStateInterface;
+use Drupal\ocha_ai_chat\Helpers\VectorHelper;
 use Drupal\ocha_ai_chat\Plugin\VectorStorePluginBase;
 use GuzzleHttp\Exception\BadResponseException;
 use Psr\Http\Message\ResponseInterface;
@@ -66,6 +67,24 @@ class Elasticsearch extends VectorStorePluginBase {
       '#required' => TRUE,
     ];
 
+    $form['plugins'][$plugin_type][$plugin_id]['min_similarity'] = [
+      '#type' => 'number',
+      '#title' => $this->t('Minimum similarity'),
+      '#description' => $this->t('Minimum similarity to be considered relevant.'),
+      '#default_value' => $config['min_similarity'] ?? NULL,
+      '#required' => TRUE,
+      '#step' => '.01',
+    ];
+
+    $form['plugins'][$plugin_type][$plugin_id]['cutoff_coefficient'] = [
+      '#type' => 'number',
+      '#title' => $this->t('Cut-off coefficient'),
+      '#description' => $this->t('Coefficient for the standard deviation to determine the similarity cut-off for relevancy.'),
+      '#default_value' => $config['cutoff_coefficient'] ?? NULL,
+      '#required' => TRUE,
+      '#step' => '.01',
+    ];
+
     return $form;
   }
 
@@ -76,6 +95,8 @@ class Elasticsearch extends VectorStorePluginBase {
     return [
       'indexing_batch_size' => 10,
       'topk' => 5,
+      'min_similarity' => 0.3,
+      'cutoff_coefficient' => 0.5,
     ];
   }
 
@@ -134,9 +155,17 @@ class Elasticsearch extends VectorStorePluginBase {
               ],
             ],
           ],
+          'embedding' => [
+            'type' => 'dense_vector',
+            'dims' => $dimensions,
+            'index' => FALSE,
+          ],
           'contents' => [
             'type' => 'nested',
             'properties' => [
+              'id' => [
+                'type' => 'keyword',
+              ],
               'type' => [
                 'type' => 'text',
                 'index' => FALSE,
@@ -149,11 +178,25 @@ class Elasticsearch extends VectorStorePluginBase {
                 'type' => 'text',
                 'index' => FALSE,
               ],
+              'embedding' => [
+                'type' => 'dense_vector',
+                'dims' => $dimensions,
+                'index' => FALSE,
+              ],
               'pages' => [
                 'type' => 'nested',
                 'properties' => [
                   'page' => [
                     'type' => 'integer',
+                    'index' => FALSE,
+                  ],
+                  'embedding' => [
+                    'type' => 'dense_vector',
+                    'dims' => $dimensions,
+                    'index' => FALSE,
+                  ],
+                  'text' => [
+                    'type' => 'text',
                     'index' => FALSE,
                   ],
                   'passages' => [
@@ -314,9 +357,81 @@ class Elasticsearch extends VectorStorePluginBase {
       return [];
     }
 
-    // Number of results to consider.
-    $topk = $this->getPluginSetting('topk', 5);
+    // Retrieve the most relevant content pages.
+    $pages = $this->getRelevantPages($index, $ids, $query_text, $query_embedding);
+    if (empty($pages)) {
+      return [];
+    }
 
+    $passages = [];
+    foreach ($pages as $page) {
+      // Calculate the similarity of the passage against the query.
+      $similarity_scores = [];
+      foreach ($page['passages'] as $key => $passage) {
+        $similarity_scores[$key] = VectorHelper::cosineSimilarity($passage['embedding'], $query_embedding) + 1.0;
+        $page['passages'][$key]['similarity'] = $similarity_scores[$key];
+        // Remove the embedding to reduce memory usage.
+        unset($page['passages'][$key]['embedding']);
+      }
+
+      // Retrieve the minimum similarity to be considered relevant.
+      $cutoff = $this->getSimilarityScoreCutOff($similarity_scores);
+
+      // Filter out irrelevant passages.
+      // @todo discard passages which are too short?
+      foreach ($page['passages'] as $passage) {
+        if ($passage['similarity'] >= $cutoff) {
+          // @todo is there a better formula?
+          $passage['score'] = $page['score'] * $passage['similarity'];
+          $passage['source'] = $page['source'];
+          // Ensure uniqueness by using the text as key.
+          $passages[mb_strtolower($passage['text'])] = $passage;
+        }
+      }
+    }
+
+    if (!empty($passages)) {
+      $passages = array_values($passages);
+
+      // Sort by passage score to have the most relevant first.
+      usort($passages, function ($a, $b) {
+        return $b['score'] <=> $a['score'];
+      });
+
+      // Limit the number of passages.
+      return array_slice($passages, 0, $limit);
+    }
+
+    return $passages;
+  }
+
+  /**
+   * Get the pages relevant to a query.
+   *
+   * @param string $index
+   *   Index name.
+   * @param array $ids
+   *   List of document ids to query.
+   * @param string $query_text
+   *   Text of the query.
+   * @param array $query_embedding
+   *   Embedding for the text query.
+   *
+   * @return array
+   *   List of pages and their text passages relevant to the query.
+   */
+  protected function getRelevantPages(string $index, array $ids, string $query_text, array $query_embedding): array {
+    if (!$this->indexExists($index)) {
+      return [];
+    }
+
+    // Retrieve the most relevant contents (document content or attachments).
+    $contents = $this->getRelevantContents($index, $ids, $query_text, $query_embedding);
+    if (empty($contents)) {
+      return [];
+    }
+
+    // Query to retrieve the most relevant pages for the most relevant contents.
     $query = [
       '_source' => [
         'id',
@@ -324,96 +439,211 @@ class Elasticsearch extends VectorStorePluginBase {
         'title',
         'source',
         'date',
-        'contents.url',
-        'contents.type',
       ],
-      'size' => $topk * count($ids),
+      'size' => count($ids) * count($contents),
       'query' => [
-        'bool' => [
-          'filter' => [
-            'ids' => [
-              'values' => $ids,
-            ],
-          ],
-          'must' => [
-            'nested' => [
-              'path' => 'contents.pages.passages',
-              'query' => [
-                'script_score' => [
+        'nested' => [
+          'path' => 'contents',
+          'query' => [
+            'bool' => [
+              'filter' => [
+                'terms' => [
+                  'contents.id' => $contents,
+                ],
+              ],
+              'must' => [
+                'nested' => [
+                  'path' => 'contents.pages',
                   'query' => [
-                    // Ensure this appears as an object when converted to JSON.
-                    'match_all' => (object) [],
-                  ],
-                  'script' => [
-                    'source' => 'cosineSimilarity(params.queryVector, "contents.pages.passages.embedding") + 1.0',
-                    'params' => [
-                      'queryVector' => $query_embedding,
+                    'script_score' => [
+                      'query' => [
+                        // Ensure this appears as an object when converted to
+                        // JSON.
+                        'match_all' => (object) [],
+                      ],
+                      'script' => [
+                        'source' => 'cosineSimilarity(params.queryVector, "contents.pages.embedding") + 1.0',
+                        'params' => [
+                          'queryVector' => $query_embedding,
+                        ],
+                      ],
+                      'min_score' => (float) $this->getPluginSetting('min_similarity') + 1.0,
                     ],
                   ],
+                  'inner_hits' => [
+                    '_source' => [
+                      'contents.pages.page',
+                      'contents.pages.passages',
+                    ],
+                    'size' => (int) $this->getPluginSetting('topk'),
+                  ],
+                  'score_mode' => 'max',
                 ],
-              ],
-              'inner_hits' => [
-                '_source' => [
-                  'contents.pages.passages.text',
-                  'contents.pages.passages.embedding',
-                ],
-                'size' => $topk,
               ],
             ],
           ],
+          'inner_hits' => [
+            '_source' => [
+              'contents.id',
+              'contents.url',
+              'contents.type',
+            ],
+            'size' => count($contents),
+          ],
+          'score_mode' => 'max',
         ],
       ],
     ];
 
     $response = $this->request('POST', $index . '/_search', $query);
 
-    if (!is_null($response)) {
-      $data = json_decode($response->getBody()->getContents(), TRUE);
+    $data = $this->getResponseContent($response);
+    if (!is_null($data)) {
+      $pages = [];
 
-      $passages = [];
-      foreach ($data['hits']['hits'] ?? [] as $hit) {
-        $id = $hit['_source']['id'];
-        $title = $hit['_source']['title'];
-        $url = $hit['_source']['url'];
-        $contents = $hit['_source']['contents'];
+      foreach ($data['hits']['hits'] ?? [] as $document_hit) {
+        $document = $document_hit['_source'];
 
-        foreach ($hit['inner_hits']['contents.pages.passages']['hits']['hits'] ?? [] as $inner_hit) {
-          $content = $contents[$inner_hit['_nested']['offset']];
+        foreach ($document_hit['inner_hits']['contents']['hits']['hits'] ?? [] as $content_hit) {
+          $content = $content_hit['_source'];
 
-          $source = [
-            'id' => $id,
-            'title' => $title,
-            'url' => $url,
-          ];
-          if ($content['type'] === 'file') {
-            $source['attachment'] = [
-              'url' => $content['url'],
-              'page' => $inner_hit['_nested']['_nested']['offset'] + 1,
+          foreach ($content_hit['inner_hits']['contents.pages']['hits']['hits'] ?? [] as $page_hit) {
+            $source = $document;
+
+            if ($content['type'] === 'file') {
+              $source['attachment'] = [
+                'url' => $content['url'],
+                'page' => $page_hit['_source']['page'],
+              ];
+            }
+
+            $pages[] = [
+              'score' => $page_hit['_score'],
+              'passages' => $page_hit['_source']['passages'],
+              'source' => $source,
             ];
           }
-
-          $text = $inner_hit['_source']['text'];
-
-          // Ensure uniqueness by using the text as key.
-          $passages[mb_strtolower($text)] = [
-            'text' => $text,
-            'embedding' => $inner_hit['_source']['embedding'],
-            'score' => $inner_hit['_score'],
-            'source' => $source,
-          ];
         }
       }
 
-      $passages = array_values($passages);
+      if (empty($pages)) {
+        return [];
+      }
 
       // Sort by score descending.
-      usort($passages, function ($a, $b) {
+      usort($pages, function ($a, $b) {
         return $b['score'] <=> $a['score'];
       });
 
-      // Limit the number of passages.
-      $passages = array_slice($passages, 0, $limit);
-      return $passages;
+      // Get the similarity score of the pages so we can remove the most
+      // irrelevant ones.
+      $similarity_scores = [];
+      foreach ($pages as $page) {
+        $similarity_scores[] = $page['score'];
+      }
+
+      // Retrieve the minimum similarity to be considered relevant.
+      $cutoff = $this->getSimilarityScoreCutOff($similarity_scores);
+
+      // Filter out irrelevant pages.
+      return array_filter($pages, function ($page) use ($cutoff) {
+        return $page['score'] >= $cutoff;
+      });
+    }
+
+    return [];
+  }
+
+  /**
+   * Get the contents relevant to a query.
+   *
+   * @param string $index
+   *   Index name.
+   * @param array $ids
+   *   List of document ids to query.
+   * @param string $query_text
+   *   Text of the query.
+   * @param array $query_embedding
+   *   Embedding for the text query.
+   *
+   * @return array
+   *   List of the IDs of the relevant contents.
+   */
+  protected function getRelevantContents(string $index, array $ids, string $query_text, array $query_embedding): array {
+    if (!$this->indexExists($index)) {
+      return [];
+    }
+
+    $query = [
+      '_source' => [
+        'id',
+      ],
+      'size' => count($ids),
+      'query' => [
+        'nested' => [
+          'path' => 'contents',
+          'query' => [
+            'script_score' => [
+              'query' => [
+                'bool' => [
+                  'filter' => [
+                    'exists' => [
+                      'field' => 'contents.embedding',
+                    ],
+                  ],
+                  'must' => [
+                    'ids' => [
+                      'values' => $ids,
+                    ],
+                  ],
+                ],
+              ],
+              'script' => [
+                'source' => 'cosineSimilarity(params.queryVector, "contents.embedding") + 1.0',
+                'params' => [
+                  'queryVector' => $query_embedding,
+                ],
+              ],
+              'min_score' => (float) $this->getPluginSetting('min_similarity') + 1.0,
+            ],
+          ],
+          'inner_hits' => [
+            '_source' => [
+              'contents.id',
+            ],
+            'size' => (int) $this->getPluginSetting('topk'),
+          ],
+          'score_mode' => 'max',
+        ],
+      ],
+    ];
+
+    $response = $this->request('POST', $index . '/_search', $query);
+
+    $data = $this->getResponseContent($response);
+    if (!is_null($data)) {
+
+      // Get the list of contents and their similarity score.
+      $contents = [];
+      foreach ($data['hits']['hits'] ?? [] as $hit) {
+        foreach ($hit['inner_hits']['contents']['hits']['hits'] ?? [] as $inner_hit) {
+          $contents[$inner_hit['_source']['id']] = $inner_hit['_score'];
+        }
+      }
+      if (empty($contents)) {
+        return [];
+      }
+
+      // Sort by score descending.
+      arsort($contents);
+
+      // Retrieve the minimum similarity to be considered relevant.
+      $cutoff = $this->getSimilarityScoreCutOff($contents);
+
+      // Exclude irrelevant contents.
+      return array_keys(array_filter($contents, function ($score) use ($cutoff) {
+        return $score >= $cutoff;
+      }));
     }
 
     return [];
@@ -436,9 +666,7 @@ class Elasticsearch extends VectorStorePluginBase {
    *   List of valid status codes that should not be logged as errors.
    *
    * @return \Psr\Http\Message\ResponseInterface|null
-   *   A guzzle response or NULL if the request was not successful.
-   *
-   * @todo handle exceptions.
+   *   The response or NULL if the request was not successful.
    */
   protected function request(string $method, string $endpoint, $payload = NULL, ?string $content_type = NULL, array $valid_status_codes = []): ?ResponseInterface {
     $url = rtrim($this->getPluginSetting('url'), '/') . '/' . ltrim($endpoint, '/');
@@ -476,35 +704,80 @@ class Elasticsearch extends VectorStorePluginBase {
   }
 
   /**
-   * Calculate the dot product of 2 vectors.
+   * Get the content of a response.
    *
-   * @param array $a
-   *   First vector.
-   * @param array $b
-   *   Second vector.
+   * @param \Psr\Http\Message\ResponseInterface|null $response
+   *   The response.
    *
-   * @return float
-   *   Dot product of the 2 vectors.
+   * @return array|null
+   *   The decoded response content.
    */
-  protected function dotProdcut(array $a, array $b): float {
-    return array_sum(array_map(function ($x, $y) {
-       return $x * $y;
-    }, $a, $b));
+  protected function getResponseContent(?ResponseInterface $response = NULL): ?array {
+    if (is_null($response)) {
+      return NULL;
+    }
+
+    // Decode the response content.
+    try {
+      $data = json_decode($response->getBody()->getContents(), TRUE, flags: \JSON_THROW_ON_ERROR);
+    }
+    catch (\Exception $exception) {
+      $this->getLogger()->error(strtr('Unable to decode response from @method request to @endpoint', [
+        '@method' => $method,
+        '@endpoint' => $endpoint,
+      ]));
+      return NULL;
+    }
+    if (!is_array($data)) {
+      $this->getLogger()->error(strtr('Invalid response data from @method request to @endpoint', [
+        '@method' => $method,
+        '@endpoint' => $endpoint,
+      ]));
+      return NULL;
+    }
+    return $data;
   }
 
   /**
-   * Calculate the cosine similarity of 2 vectors.
+   * Calculate the similarity score cut-off.
    *
-   * @param array $a
-   *   First vector.
-   * @param array $b
-   *   Second vector.
+   * @param array $similarity_scores
+   *   List of similarity scores as floats.
+   * @param float|null $alpha
+   *   Coefficient to adjust the cut-off value.
    *
    * @return float
-   *   Cosine similarity of the 2 vectors.
+   *   Similarity score cut-off.
    */
-  protected function cosineSimilarity(array $a, array $b) {
-    return $this->dotProdcut($a, $b) / sqrt($this->dotProdcut($a, $a) * $this->dotProdcut($b, $b));
+  protected function getSimilarityScoreCutOff(array $similarity_scores, ?float $alpha = NULL): float {
+    $alpha = $alpha ?? (float) $this->getPluginSetting('cutoff_coefficient');
+
+    $count = count($similarity_scores);
+    if ($count === 0) {
+      return 0.0;
+    }
+    elseif ($count === 1) {
+      return reset($similarity_scores);
+    }
+
+    // Determine the average similarity score.
+    $mean = array_sum($similarity_scores) / $count;
+
+    // Determine the standard deviation.
+    $sample = FALSE;
+    $variance = 0.0;
+    foreach ($similarity_scores as $value) {
+      $variance += pow((float) $value - $mean, 2);
+    };
+    $deviation = (float) sqrt($variance / ($sample ? $count - 1 : $count));
+
+    // Calculate the similarity cut-off.
+    $cutoff = $mean + $alpha * $deviation;
+
+    // The above formula can result in a cutoff higher than the highest
+    // similarity. In that case we return the max similarity to avoid discarding
+    // everything.
+    return min($cutoff, max($similarity_scores));
   }
 
 }

@@ -35,25 +35,17 @@ class AwsBedrock extends CompletionPluginBase {
       return '';
     }
 
+    $template = strtr($this->getPluginSetting('prompt_template'), ["\r" => '']);
+
     // @todo review what is a good template for AWS titan model.
-    $prompt = strtr($this->getPluginSetting('prompt_template'), [
-      "\r" => '',
+    $prompt = strtr($template, [
       '{{ context }}' => $context,
       '{{ question }}' => $question,
     ]);
 
     $payload = [
       'accept' => 'application/json',
-      'body' => json_encode([
-        'inputText' => $prompt,
-        'textGenerationConfig' => [
-          'maxTokenCount' => $this->getPluginSetting('max_tokens', 512),
-          // @todo adjust based on the prompt.
-          'stopSequences' => [],
-          'temperature' => 0.0,
-          'topP' => 0.9,
-        ],
-      ]),
+      'body' => json_encode($this->generateRequestBody($prompt)),
       'contentType' => 'application/json',
       'modelId' => $this->getPluginSetting('model'),
     ];
@@ -77,7 +69,86 @@ class AwsBedrock extends CompletionPluginBase {
       return '';
     }
 
-    return trim($data['results'][0]['outputText'] ?? '');
+    return $this->parseResponseBody($data);
+  }
+
+  /**
+   * Generate the request body for the completion.
+   *
+   * @param string $prompt
+   *   Prompt.
+   *
+   * @return array
+   *   Request body.
+   */
+  protected function generateRequestBody(string $prompt): array {
+    $max_tokens = $this->getPluginSetting('max_tokens', 512);
+
+    switch ($this->getPluginSetting('model')) {
+      case 'amazon.titan-text-express-v1':
+        return [
+          'inputText' => $prompt,
+          'textGenerationConfig' => [
+            'maxTokenCount' => $max_tokens,
+            // @todo adjust based on the prompt?
+            'stopSequences' => [],
+            'temperature' => 0.0,
+            'topP' => 0.9,
+          ],
+        ];
+
+      case 'anthropic.claude-instant-v1':
+        return [
+          'prompt' => "\n\nHuman:$prompt\n\nAssistant:",
+          'temperature' => 0.0,
+          'top_p' => 0.9,
+          'top_k' => 0,
+          'max_tokens_to_sample' => $max_tokens,
+          'stop_sequences' => ["\n\nHuman:"],
+        ];
+
+      case 'cohere.command-text-v14':
+      case 'cohere.command-light-text-v14':
+        return [
+          'prompt' => $prompt,
+          'temperature' => 0.0,
+          'p' => 0.9,
+          'k' => 0.0,
+          'max_tokens' => $max_tokens,
+          'stop_sequences' => [],
+          'return_likelihoods' => 'NONE',
+          'stream' => FALSE,
+          'num_generations' => 1,
+          'truncate' => 'NONE',
+        ];
+    }
+
+    return [];
+  }
+
+  /**
+   * Parse the reponse from the completion API.
+   *
+   * @param array $data
+   *   Decoded response.
+   *
+   * @return string
+   *   The generated text.
+   */
+  protected function parseResponseBody(array $data): string {
+    switch ($this->getPluginSetting('model')) {
+      case 'amazon.titan-text-express-v1':
+        return trim($data['results'][0]['outputText'] ?? '');
+
+      case 'anthropic.claude-instant-v1':
+        return trim($data['completion'] ?? '');
+
+      case 'cohere.command-text-v14':
+      case 'cohere.command-light-text-v14':
+        return trim($data['generations'][0]['text'] ?? '');
+    }
+
+    return '';
   }
 
   /**
@@ -164,7 +235,23 @@ class AwsBedrock extends CompletionPluginBase {
       '#default_value' => $config['role_arn'] ?? NULL,
     ];
 
+    // Move those fields lower in the form.
+    $form['plugins'][$plugin_type][$plugin_id]['max_tokens']['#weight'] = 2;
+    $form['plugins'][$plugin_type][$plugin_id]['prompt_template']['#weight'] = 3;
+
     return $form;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getModels(): array {
+    return [
+      'amazon.titan-text-express-v1' => $this->t('Amazon - Titan - Express'),
+      'anthropic.claude-instant-v1' => $this->t('Anthropic - Claude - Instant'),
+      'cohere.command-text-v14' => $this->t('Cohere - Command'),
+      'cohere.command-light-text-v14' => $this->t('Cohere - Command - Light'),
+    ];
   }
 
 }

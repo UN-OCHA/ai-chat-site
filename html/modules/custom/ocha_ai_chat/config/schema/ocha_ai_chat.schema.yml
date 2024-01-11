@@ -46,6 +46,13 @@ ocha_ai_chat.settings:
       type: mapping
       label: 'Default settings.'
       mapping:
+        form:
+          type: mapping
+          label: 'Default form settings.'
+          mapping:
+            instructions:
+              type: string
+              label: 'Instructions.'
         plugins:
           type: mapping
           label: 'Default plugins.'
@@ -265,3 +272,9 @@ ocha_ai_chat.plugin.vector_store.elasticsearch:
     topk:
       type: integer
       label: 'Number of nearest neighbours to retrieve when doing similarity search.'
+    min_similarity:
+      type: float
+      label: 'Minimum similarity to be considered relevant.'
+    cutoff_coefficient:
+      type: float
+      label: 'Coefficient for the standard deviation to determine the similarity cut-off for relevancy'

@@ -34,4 +34,12 @@ interface CompletionPluginInterface {
    */
   public function generateContext(string $question, array $passages): string;
 
+  /**
+   * Get the list of available models.
+   *
+   * @return array
+   *   List of models keyed by model ID and with labels as values.
+   */
+  public function getModels(): array;
+
 }
