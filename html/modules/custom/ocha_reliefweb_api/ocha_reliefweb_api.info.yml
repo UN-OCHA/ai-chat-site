@@ -1,5 +1,0 @@
-type: module
-name: OCHA ReliefWeb API
-description: 'Provides integration with the ReliefWeb API.'
-package: unocha
-core_version_requirement: ^9 || ^10
