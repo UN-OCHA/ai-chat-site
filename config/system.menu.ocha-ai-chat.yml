@@ -1,0 +1,8 @@
+uuid: 549b5c67-3431-4791-8f33-50abc1c5d1e2
+langcode: en
+status: true
+dependencies: {  }
+id: ocha-ai-chat
+label: 'OCHA AI Chat'
+description: 'Various OCHA AI Chat module links'
+locked: false

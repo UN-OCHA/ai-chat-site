@@ -1,3 +1,6 @@
 #!/bin/bash
 
-uvicorn app:app --host 0.0.0.0 --port 80 --reload
+uvicorn app:app \
+  --host ${SERVER_HOST:-0.0.0.0} \
+  --port ${SERVER_PORT:-80} \
+  --reload

@@ -30,4 +30,11 @@ class EmbeddingPluginManager extends PluginManagerBase implements EmbeddingPlugi
     $this->alterInfo('ocha_ai_chat_embedding_info');
   }
 
+  /**
+   * {@inheritdoc}
+   */
+  public function getPluginType(): string {
+    return 'embedding';
+  }
+
 }

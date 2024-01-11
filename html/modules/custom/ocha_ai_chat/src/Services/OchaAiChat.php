@@ -2,10 +2,15 @@
 
 namespace Drupal\ocha_ai_chat\Services;
 
+use Drupal\Component\Datetime\TimeInterface;
+use Drupal\Component\Utility\NestedArray;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\ImmutableConfig;
+use Drupal\Core\Database\Connection;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
+use Drupal\Core\Session\AccountProxyInterface;
 use Drupal\Core\State\StateInterface;
+use Drupal\ocha_ai_chat\Helpers\VectorHelper;
 use Drupal\ocha_ai_chat\Plugin\CompletionPluginInterface;
 use Drupal\ocha_ai_chat\Plugin\CompletionPluginManagerInterface;
 use Drupal\ocha_ai_chat\Plugin\EmbeddingPluginInterface;
@@ -47,6 +52,27 @@ class OchaAiChat {
   protected StateInterface $state;
 
   /**
+   * The current user.
+   *
+   * @var \Drupal\Core\Session\AccountProxyInterface
+   */
+  protected AccountProxyInterface $currentUser;
+
+  /**
+   * The database.
+   *
+   * @var \Drupal\Core\Database\Connection
+   */
+  protected Connection $database;
+
+  /**
+   * The time service.
+   *
+   * @var \Drupal\Component\Datetime\TimeInterface
+   */
+  protected TimeInterface $time;
+
+  /**
    * Completion plugin manager.
    *
    * @var \Drupal\ocha_ai_chat\Plugin\CompletionPluginManagerInterface
@@ -82,14 +108,14 @@ class OchaAiChat {
   protected TextSplitterPluginManagerInterface $textSplitterPluginManager;
 
   /**
-   * Text vector store manager.
+   * Vector store manager.
    *
    * @var \Drupal\ocha_ai_chat\Plugin\VectorStorePluginManagerInterface
    */
   protected VectorStorePluginManagerInterface $vectorStorePluginManager;
 
   /**
-   * OCHA AI Chat settings.
+   * Static cache for the settings.
    *
    * @var array
    */
@@ -104,6 +130,12 @@ class OchaAiChat {
    *   The logger factory service.
    * @param \Drupal\Core\State\StateInterface $state
    *   The state service.
+   * @param \Drupal\Core\Session\AccountProxyInterface $current_user
+   *   The current user.
+   * @param \Drupal\Core\Database\Connection $database
+   *   The database.
+   * @param \Drupal\Component\Datetime\TimeInterface $time
+   *   The time service.
    * @param \Drupal\ocha_ai_chat\Plugin\CompletionPluginManagerInterface $completion_plugin_manager
    *   The completion plugin manager.
    * @param \Drupal\ocha_ai_chat\Plugin\EmbeddingPluginManagerInterface $embedding_plugin_manager
@@ -121,6 +153,9 @@ class OchaAiChat {
     ConfigFactoryInterface $config_factory,
     LoggerChannelFactoryInterface $logger_factory,
     StateInterface $state,
+    AccountProxyInterface $current_user,
+    Connection $database,
+    TimeInterface $time,
     CompletionPluginManagerInterface $completion_plugin_manager,
     EmbeddingPluginManagerInterface $embedding_plugin_manager,
     SourcePluginManagerInterface $source_plugin_manager,
@@ -131,6 +166,9 @@ class OchaAiChat {
     $this->config = $config_factory->get('ocha_ai_chat.settings');
     $this->logger = $logger_factory->get('ocha_ai_chat');
     $this->state = $state;
+    $this->currentUser = $current_user;
+    $this->database = $database;
+    $this->time = $time;
     $this->completionPluginManager = $completion_plugin_manager;
     $this->embeddingPluginManager = $embedding_plugin_manager;
     $this->sourcePluginManager = $source_plugin_manager;
@@ -151,103 +189,257 @@ class OchaAiChat {
    *
    * @param string $question
    *   Question.
-   * @param string $url
-   *   Document source URL.
-   * @param bool $reset
-   *   If TRUE, delete the index. This is mostly for development.
+   * @param array $source
+   *   Data to retrieve the source documents.
+   * @param int $limit
+   *   Number of documents to retrieve.
+   * @param \Drupal\ocha_ai_chat\Plugin\CompletionPluginInterface $completion_plugin
+   *   Optional completion plugin override.
    *
-   * @return string
-   *   Answer.
+   * @return array
+   *   Associative array with the qestion, the answer, the source URL,
+   *   the limit, the plugins, the stats and the relevant passages.
    */
-  public function answer(string $question, string $url, bool $reset = FALSE): string {
+  public function answer(string $question, array $source, int $limit = 10, ?CompletionPluginInterface $completion_plugin = NULL): array {
+    $completion_plugin = $completion_plugin ?? $this->getCompletionPlugin();
+    $embedding_plugin = $this->getEmbeddingPlugin();
+    $source_plugin = $this->getSourcePlugin();
+    $vector_store_plugin = $this->getVectorStorePlugin();
+
     // Stats to record the time of each operation.
     // @todo either store the stats elsewhere (log etc.) or remove.
-    $stats = [];
+    $data = [
+      'completion_plugin_id' => $completion_plugin->getPluginId(),
+      'embedding_plugin_id' => $embedding_plugin->getPluginId(),
+      'source_plugin_id' => $source_plugin->getPluginId(),
+      'source_data' => $source,
+      'source_limit' => $limit,
+      'source_document_ids' => [],
+      'question' => $question,
+      'answer' => '',
+      'passages' => [],
+      'status' => 'error',
+      'timestamp' => $this->time->getRequestTime(),
+      'duration' => 0,
+      'uid' => $this->currentUser->id(),
+      'stats' => [
+        'Get source documents' => 0,
+        'Embed documents' => 0,
+        'Get question embedding' => 0,
+        'Get relevant passages' => 0,
+        'Get answer' => 0,
+      ],
+    ];
+
+    $time = microtime(TRUE);
 
     // Retrieve the source documents matching the document source URL.
-    $time = microtime(TRUE);
-    ['index' => $index, 'documents' => $documents] = $this->getSourceDocuments($url);
-    $stats['Get source documents'] = microtime(TRUE) - $time;
+    ['index' => $index, 'documents' => $documents] = $this->getSourceDocuments($source, $limit);
+    $data['source_document_ids'] = array_keys($documents);
+    $data['stats']['Get source documents'] = 0 - $time + ($time = microtime(TRUE));
 
     // If there are no documents to query, then no need to ask the AI.
     if (empty($documents)) {
-      return 'Sorry, no documents were found containing the answer to your question.';
+      $data['answer'] = 'Sorry, no source documents were found from the source URL.';
+      return $this->logAnswerData($data);
     }
 
-    // @todo remove, this is mostly for development and/or only remove the
-    // documents from the index.
-    if (!empty($reset)) {
-      $time = microtime(TRUE);
-      $this->getVectorStorePlugin()->deleteIndex($index);
-      $stats['Delete the index'] = microtime(TRUE) - $time;
-    }
+    // @todo Maybe that should be done outside of the answer pipeline or in a
+    // way that can help give feedback on the progress.
+    $result = $this->embedDocuments($index, $documents);
+    $data['stats']['Embed documents'] = 0 - $time + ($time = microtime(TRUE));
 
-    // Maybe that should be done outside of the answer pipeline.
-    $time = microtime(TRUE);
-    if (!$this->embedDocuments($index, $documents)) {
-      return 'Sorry, there was an error trying to retrieve the documents to the answer to your question.';
+    // Abort if we were unable to process the source documents.
+    // @todo maybe still proceed if some of the document could be processed?
+    if (!$result) {
+      $data['answer'] = 'Sorry, there was an error trying to retrieve the documents to the answer to your question.';
+      return $this->logAnswerData($data);
     }
-    $stats['Embed documents'] = microtime(TRUE) - $time;
-
-    $ids = array_keys($documents);
 
     // Generate the embedding for the question.
-    $time = microtime(TRUE);
-    $embedding = $this->getEmbeddingPlugin()->generateEmbedding($question);
-    $stats['Get question embedding'] = microtime(TRUE) - $time;
+    $embedding = $embedding_plugin->generateEmbedding($question, TRUE);
+    $data['stats']['Get question embedding'] = 0 - $time + ($time = microtime(TRUE));
+
+    // Abort if we were unable to generate the embedding for the question as
+    // we cannot retrieve the relevant passages in that case.
+    if (empty($embedding)) {
+      $data['answer'] = 'Sorry, there was an error trying to process the qestion.';
+      return $this->logAnswerData($data);
+    }
 
     // Find document passages relevant to the question.
-    $time = microtime(TRUE);
-    $passages = $this->getVectorStorePlugin()->getRelevantPassages($index, $ids, $question, $embedding);
+    $passages = $vector_store_plugin->getRelevantPassages($index, array_keys($documents), $question, $embedding);
+    $data['stats']['Get relevant passages'] = 0 - $time + ($time = microtime(TRUE));
+
+    // Abort if we could not find relevant passages to avoid generating an
+    // answer without context.
     if (empty($passages)) {
-      return 'Sorry, no documents were found containing the answer to your question.';
+      $data['answer'] = 'Sorry, no documents were found containing the answer to your question.';
+      return $this->logAnswerData($data);
     }
-    $stats['Get relevant passages'] = microtime(TRUE) - $time;
-
-    // Generate the prompt.
-    $context = [
-      // @todo get that from the config or settings.
-      "You are a helpful assistant. Answer the user's question concisely and exactly, using only the following information. Say you don't know if you cannot answer.",
-    ];
-
-    foreach ($passages as $passage) {
-      $context[] = $passage['text'];
+    else {
+      $data['passages'] = $passages;
     }
-    $context = implode("\n\n", $context);
+
+    // Generate inline references for the passages.
+    foreach ($passages as $key => $passage) {
+      $reference = [];
+      // Sources.
+      $reference[] = implode(', ', array_filter(array_map(function ($source) {
+        return $source['shortname'] ?? $source['name'] ?? '';
+      }, $passage['source']['source'])));
+      // Title.
+      $reference[] = '"' . $passage['source']['title'] . '"';
+      // Publication date.
+      $reference[] = date_create($passage['source']['date']['original'])->format('j F Y');
+      // Keep track of the reference so it can be used to generate the context.
+      $passages[$key]['reference'] = implode(', ', $reference);
+    }
+
+    // Generate the context to answer the question based on the relevant
+    // passages.
+    $context = $completion_plugin->generateContext($question, $passages);
 
     // @todo parse the answer and enrich it with the sources.
-    $time = microtime(TRUE);
-    $answer = $this->getCompletionPlugin()->answer($question, $context);
-    $stats['Get answer'] = microtime(TRUE) - $time;
+    $answer = $completion_plugin->answer($question, $context);
+    $data['stats']['Get answer'] = 0 - $time + ($time = microtime(TRUE));
 
-    // @todo better logging.
-    $this->logger->info(print_r($stats, TRUE));
+    // The answer is empty for example if there was an error during the request.
+    if (empty($answer)) {
+      $data['answer'] = 'Sorry, I was unable to answer to your question.';
+      return $this->logAnswerData($data);
+    }
+    else {
+      $data['answer'] = trim($answer);
+    }
 
-    return $answer;
+    // Arrived at this point we have a valid answer so we consider the request
+    // successful.
+    $data['status'] = 'success';
+
+    return $this->logAnswerData($data);
+  }
+
+  /**
+   * Log the answer data.
+   *
+   * @param array $data
+   *   Answer data.
+   *
+   * @return array
+   *   Answer data
+   *
+   * @see ::answer()
+   */
+  protected function logAnswerData(array $data): array {
+    // Remove the embedding of the passages as they are not really useful
+    // to have in the result or logs.
+    foreach ($data['passages'] as $index => $passage) {
+      unset($data['passages'][$index]['embedding']);
+    }
+
+    // Set the duration.
+    $data['duration'] = $this->time->getCurrentTime() - $data['timestamp'];
+
+    // Encode non scalar data like passages and stats.
+    $fields = array_map(function ($item) {
+      return is_scalar($item) ? $item : json_encode($item);
+    }, $data);
+
+    // Insert the record and retrieve the log ID. It can be used for example
+    // to set the "satisfaction score" afterwards.
+    $data['id'] = $this->database
+      ->insert('ocha_ai_chat_logs')
+      ->fields($fields)
+      ->execute();
+
+    return $data;
+  }
+
+  /**
+   * Add feedback to an answer.
+   *
+   * @param int $id
+   *   The ID of the answer log.
+   * @param int $satisfaction
+   *   A satisfaction score from 0 to 5.
+   * @param string $feedback
+   *   Feedback comment.
+   *
+   * @return bool
+   *   TRUE if a record was updated.
+   */
+  public function addAnswerFeedback(int $id, int $satisfaction, string $feedback): bool {
+    $updated = $this->database
+      ->update('ocha_ai_chat_logs')
+      ->fields([
+        'satisfaction' => $satisfaction,
+        'feedback' => $feedback,
+      ])
+      ->condition('id', $id, '=')
+      ->execute();
+
+    return !empty($updated);
   }
 
   /**
    * Get a list of source documents for the given document source URL.
    *
-   * @param string $url
-   *   Document source URL.
+   * @param array $source
+   *   Data to retrieve the source documents.
+   * @param int $limit
+   *   Number of documents to retrieve.
    *
    * @return array
    *   Associative array with the index corresponding to the type of
    *   documents and the list of source documents for the source URL.
+   *
+   * @todo we should store which plugins were used to generate the embeddings
+   *   so that they can be regenerated if the plugins change.
    */
-  protected function getSourceDocuments(string $url): array {
+  protected function getSourceDocuments(array $source, int $limit): array {
     $plugin = $this->getSourcePlugin();
 
-    $limit = $this->getSetting('source_document_limit', 10);
-    $documents = $plugin->getDocuments($url, $limit);
+    $documents = $plugin->getDocuments($source, $limit);
 
     // @todo allow multiple indices.
     $resource = key($documents);
     $documents = $documents[$resource] ?? [];
 
+    if (empty($documents)) {
+      $this->logger->notice(strtr('No documents found for the ReliefWeb river URL: @url', [
+        '@url' => $url,
+      ]));
+    }
+
+    // For the similarity search, we cannot compare vectors generated by an
+    // embedding model with a vector from another embedding model even if they
+    // have the same dimensions so we ensure that doesn't happen by prefixing
+    // the index used to store the vectors with the embedding plugin id and the
+    // model ID and dimensions.
+    //
+    // @todo review if we really need the source ID as well. If the index
+    // structure is the same between documents regardless of the source then
+    // we could remove it.
+    //
+    // @todo ensure it's below 255 characters (ex: generate a hash?)
+    //
+    // @todo this is not good because the text splitter, text extractor plugins
+    // impact the generation of the embeddings. So we need to generate an index
+    // name with all the plugin IDs or the info about the plugins in the index
+    // so that we can regenerate the embeddings when the plugins change.
+    $index = implode('__', [
+      $this->getEmbeddingPlugin()->getPluginId(),
+      $this->getEmbeddingPlugin()->getModelName(),
+      $this->getEmbeddingPlugin()->getDimensions(),
+      $plugin->getPluginId(),
+      $resource,
+    ]);
+
+    $index = preg_replace('/[^a-z0-9_-]+/', '_', strtolower($index));
+
     return [
-      'index' => $plugin->getPluginId() . '_' . $resource,
+      'index' => $index,
       'documents' => $documents,
     ];
   }
@@ -272,54 +464,103 @@ class OchaAiChat {
    * @todo we may want to use a queue and do that asynchronously at some point.
    */
   public function embedDocuments(string $index, array $documents): bool {
-    if (empty($documents)) {
-      $this->logger->notice(strtr('No documents found for the ReliefWeb river URL: @url', [
-        '@url' => $url,
-      ]));
-      return FALSE;
+    $vector_store_plugin = $this->getVectorStorePlugin();
+    $dimensions = $this->getEmbeddingPlugin()->getDimensions();
+
+    // Retrieve indexed documents.
+    $existing = $vector_store_plugin->getDocuments($index, array_keys($documents), [
+      'id',
+      'date.changed',
+    ]);
+
+    // Process and index new or updated documents.
+    foreach ($documents as $id => $document) {
+      // Skip if the document already exists and has not changed.
+      if (isset($existing[$id]) && $existing[$id]['date']['changed'] === $document['date']['changed']) {
+        continue;
+      }
+
+      // Process the document contents.
+      try {
+        $document = $this->processDocument($document);
+      }
+      catch (\Exception $exception) {
+        $this->logger->error(strtr('Unable to process document @url', [
+          '@url' => $document['url'] ?? $id,
+        ]));
+        // @todo instead of aborting when there is an error indexing a document
+        // log the error.
+        return FALSE;
+      }
+
+      // Index the document.
+      if (!$vector_store_plugin->indexDocument($index, $document, $dimensions)) {
+        // @todo instead of aborting when there is an error indexing a document
+        // log the error.
+        return FALSE;
+      }
     }
 
-    // Skip documents which were already processed.
-    $existing = $this->getVectorStorePlugin()->getDocuments($index, array_keys($documents));
-    $documents = array_diff_key($documents, $existing);
-
-    // Process the documents, extracting embeddings and preparing for indexing.
-    $documents = $this->processDocuments($documents);
-
-    // Index the documents.
-    return $this->getVectorStorePlugin()->indexDocuments($index, $documents);
+    return TRUE;
   }
 
   /**
-   * Process (download, extract text, split) documents before embedding.
+   * Process (download, extract text, split) a document's contents.
    *
-   * @param array $documents
-   *   List of dcuments (associative arrays) with the type of document, property
-   *   to get the document text chunks and metadata.
+   * @param array $document
+   *   Document.
    *
    * @return array
-   *   List of passages (chunk of text) with their embeddings and source.
+   *   Document with updated contents.
    */
-  protected function processDocuments(array $documents): array {
-    foreach ($documents as $id => $document) {
-      $contents = $document['contents'];
+  protected function processDocument(array $document): array {
+    foreach ($document['contents'] as $key => $content) {
+      switch ($content['type']) {
+        case 'markdown':
+          $content['pages'] = $this->processMarkdown($content['content']);
+          break;
 
-      foreach ($contents as $key => $content) {
-        switch ($content['type']) {
-          case 'markdown':
-            $contents[$key]['pages'] = $this->processMarkdown($content['content']);
-            break;
-
-          case 'file':
-            $contents[$key]['pages'] = $this->processFile($content['url'], $content['mimetype']);
-            break;
-        }
+        case 'file':
+          $content['pages'] = $this->processFile($content['url'], $content['mimetype']);
+          break;
       }
 
-      $documents[$id]['contents'] = $contents;
+      // Remove empty pages.
+      $content['pages'] = array_filter($content['pages'], function ($page) {
+        return !empty($page['passages']);
+      });
+
+      // Generate the embedding for the content based on the mean of its page
+      // embeddings. This is cheaper than calling the embedding API though we
+      // lose in accuracy.
+      if (!empty($content['pages'])) {
+        $content['pages'] = array_values($content['pages']);
+        $content['embedding'] = $this->getMeanEmbedding($content['pages']);
+      }
+
+      $document['contents'][$key] = $content;
     }
 
-    return $documents;
+    return $document;
+  }
+
+  /**
+   * Get the mean of embeddings.
+   *
+   * @param array $elements
+   *   List of associative arrays where earch array has an "embedding" property.
+   *
+   * @return array
+   *   The mean of the embeddings.
+   */
+  protected function getMeanEmbedding(array $elements): array {
+    $embeddings = [];
+    foreach ($elements as $element) {
+      if (!empty($element['embedding'])) {
+        $embeddings[] = $element['embedding'];
+      }
+    }
+    return !empty($embeddings) ? VectorHelper::mean($embeddings, axis: 'y') : [];
   }
 
   /**
@@ -335,7 +576,7 @@ class OchaAiChat {
   protected function processMarkdown(string $text): array {
     $replacements = [
       // Headings.
-      '/^#{1,6}\s*([^#]+)$/um' => "$1\n\n",
+      '/^#{1,6}\s*(.+?)\s*#*\s*$/um' => "$1\n\n",
       // Headings or horizontal lines or code blocks.
       '/^[=*`-]{2,}$/um' => "\n",
     ];
@@ -364,43 +605,62 @@ class OchaAiChat {
 
     // Record time to execute the different steps.
     // @todo either store the stats elsewhere (log etc.) or remove.
-    $stats = [];
+    $stats = [
+      'uri' => $uri,
+      'mimetype' => $mimetype,
+      'download' => 0,
+      'extraction' => 0,
+      'processing' => 0,
+    ];
+
+    $time = microtime(TRUE);
 
     // Create a temporary file to download to.
     $file = tmpfile();
     if ($file === FALSE) {
-      $this->logger->error('Unable to create temporary file');
+      $this->logger->error('Unable to create temporary file.');
       return [];
     }
 
-    // Download the file.
-    $time = microtime(TRUE);
-    if (stream_copy_to_stream(fopen($uri, 'r'), $file) === FALSE) {
-      $this->logger->error("Unable to download the file $uri.");
-      return [];
+    try {
+      // Download the file.
+      $copy = stream_copy_to_stream(fopen($uri, 'r'), $file);
+      $stats['download'] = 0 - $time + ($time = microtime(TRUE));
+      if ($copy === FALSE) {
+        $this->logger->error(strtr('Unable to download the file @uri.', [
+          'uri' => $uri,
+        ]));
+      }
+      else {
+        // Extract the content of each page.
+        $path = realpath(stream_get_meta_data($file)['uri']);
+        $page_texts = $this->getTextExtractorPlugin($mimetype)->getPageTexts($path);
+        $stats['extraction'] = 0 - $time + ($time = microtime(TRUE));
+
+        // Process each page.
+        if (!empty($page_texts)) {
+          $pages = [];
+          foreach ($page_texts as $page_number => $page_text) {
+            $pages[] = $this->processPage($page_text, $page_number);
+          }
+          $stats['processing'] = 0 - $time + ($time = microtime(TRUE));
+
+          return $pages;
+        }
+      }
     }
-    $stats['Download'] = microtime(TRUE) - $time;
-
-    // Extract the content of each page.
-    $time = microtime(TRUE);
-    $path = realpath(stream_get_meta_data($file)['uri']);
-    $page_texts = $this->getTextExtractorPlugin($mimetype)->getPageTexts($path);
-    $stats['Extraction'] = microtime(TRUE) - $time;
-
-    // Process each page.
-    $time = microtime(TRUE);
-    $pages = [];
-    foreach ($page_texts as $page_number => $page_text) {
-      $pages[] = $this->processPage($page_text, $page_number);
+    catch (\Exception $exception) {
+      throw $exception;
     }
-    $stats['Processing'] = microtime(TRUE) - $time;
+    finally {
+      // Ensure we close the temporary file so it can be deleted.
+      fclose($file);
 
-    // @todo better logging.
-    $this->logger->info(print_r($stats, TRUE));
+      // @todo better logging.
+      $this->logger->info(print_r($stats, TRUE));
+    }
 
-    fclose($file);
-
-    return $pages;
+    return [];
   }
 
   /**
@@ -416,19 +676,52 @@ class OchaAiChat {
    *   has a text and corresponding embedding.
    */
   protected function processPage(string $content, int $page = 0): array {
-    $texts = $this->splitText($content);
+    // @todo clean the page.
+    $content = trim($content);
+    if (empty($content)) {
+      return [];
+    }
+
+    // Most models are English only and don't work well with other languages.
+    // Also the text splitter plugins don't work well with languages like
+    // Arabic or Chinese.
+    $language = (new \Text_LanguageDetect())->detectSimple($content);
+    // @todo retrieve that from the config.
+    $allowed_languages = ['english'];
+    if (!in_array($language, $allowed_languages)) {
+      return [];
+    }
+
+    // Split the content into passages.
+    $texts = $this->getTextSplitterPlugin()->splitText($content);
+
+    // Generate an embedding for each passage.
     $embeddings = $this->getEmbeddingPlugin()->generateEmbeddings($texts);
 
     $passages = [];
     foreach ($texts as $index => $text) {
-      $passages[] = [
-        'text' => $text,
-        'embedding' => $embeddings[$index],
-      ];
+      if (!empty($embeddings[$index])) {
+        $passages[] = [
+          'text' => $text,
+          'embedding' => $embeddings[$index],
+        ];
+      }
     }
+
+    if (empty($passages)) {
+      return [];
+    }
+
+    // Get the embedding for the page from the mean of the passage embeddings.
+    // With some overlap for the passages, this embedding is quite close to
+    // the embedding we could get by calling the API. This is cheaper and
+    // faster so it's a good compromise.
+    $embedding = $this->getMeanEmbedding($passages);
 
     return [
       'page' => $page,
+      'text' => $content,
+      'embedding' => $embedding,
       'passages' => $passages,
     ];
   }
@@ -443,19 +736,84 @@ class OchaAiChat {
    *   TRUE if the file type is supported.
    */
   protected function isSupportedFileType(string $mimetype): bool {
-    $plugin_ids = $this->getSetting('text_extractor_plugin_ids', ['application/pdf' => 'mupdf']);
-    return isset($plugin_ids[$mimetype]);
+    $plugin_id = $this->getSetting([
+      'plugins',
+      'text_extractor',
+      $mimetype,
+      'plugin_id',
+    ]);
+    return isset($plugin_id);
+  }
+
+  /**
+   * Get the completion plugin manager.
+   *
+   * @return \Drupal\ocha_ai_chat\Plugin\CompletionPluginManagerInterface
+   *   Completion plugin manager.
+   */
+  public function getCompletionPluginManager(): CompletionPluginManagerInterface {
+    return $this->completionPluginManager;
+  }
+
+  /**
+   * Get the embedding plugin manager.
+   *
+   * @return \Drupal\ocha_ai_chat\Plugin\EmbeddingPluginManagerInterface
+   *   Embedding plugin.
+   */
+  public function getEmbeddingPluginManager(): EmbeddingPluginManagerInterface {
+    return $this->embeddingPluginManager;
+  }
+
+  /**
+   * Get the source plugin manager.
+   *
+   * @return \Drupal\ocha_ai_chat\Plugin\SourcePluginManagerInterface
+   *   Source plugin.
+   */
+  public function getSourcePluginManager(): SourcePluginManagerInterface {
+    return $this->sourcePluginManager;
+  }
+
+  /**
+   * Get the text extractor plugin manager.
+   *
+   * @return \Drupal\ocha_ai_chat\Plugin\TextExtractorPluginManagerInterface
+   *   Text extractor plugin.
+   */
+  public function getTextExtractorPluginManager(): TextExtractorPluginManagerInterface {
+    return $this->textExtractorPluginManager;
+  }
+
+  /**
+   * Get the text splitter plugin manager.
+   *
+   * @return \Drupal\ocha_ai_chat\Plugin\TextSplitterPluginManagerInterface
+   *   Text splitter plugin.
+   */
+  public function getTextSplitterPluginManager(): TextSplitterPluginManagerInterface {
+    return $this->textSplitterPluginManager;
+  }
+
+  /**
+   * Get the vector store plugin manager.
+   *
+   * @return \Drupal\ocha_ai_chat\Plugin\VectorStorePluginManagerInterface
+   *   Vector store plugin manager.
+   */
+  public function getVectorStorePluginManager(): VectorStorePluginManagerInterface {
+    return $this->vectorStorePluginManager;
   }
 
   /**
    * Get the completion plugin.
    *
    * @return \Drupal\ocha_ai_chat\Plugin\CompletionPluginInterface
-   *   Embedding plugin.
+   *   Completion plugin.
    */
-  protected function getCompletionPlugin(): CompletionPluginInterface {
-    $plugin_id = $this->getSetting('completion_plugin_id', 'openai');
-    return $this->completionPluginManager->getPlugin($plugin_id);
+  public function getCompletionPlugin(): CompletionPluginInterface {
+    $plugin_id = $this->getSetting(['plugins', 'completion', 'plugin_id']);
+    return $this->getCompletionPluginManager()->getPlugin($plugin_id);
   }
 
   /**
@@ -464,9 +822,9 @@ class OchaAiChat {
    * @return \Drupal\ocha_ai_chat\Plugin\EmbeddingPluginInterface
    *   Embedding plugin.
    */
-  protected function getEmbeddingPlugin(): EmbeddingPluginInterface {
-    $plugin_id = $this->getSetting('embedding_plugin_id', 'openai');
-    return $this->embeddingPluginManager->getPlugin($plugin_id);
+  public function getEmbeddingPlugin(): EmbeddingPluginInterface {
+    $plugin_id = $this->getSetting(['plugins', 'embedding', 'plugin_id']);
+    return $this->getEmbeddingPluginManager()->getPlugin($plugin_id);
   }
 
   /**
@@ -475,24 +833,25 @@ class OchaAiChat {
    * @return \Drupal\ocha_ai_chat\Plugin\SourcePluginInterface
    *   Source plugin.
    */
-  protected function getSourcePlugin(): SourcePluginInterface {
-    $plugin_id = $this->getSetting('source_plugin_id', 'reliefweb');
-    return $this->sourcePluginManager->getPlugin($plugin_id);
+  public function getSourcePlugin(): SourcePluginInterface {
+    $plugin_id = $this->getSetting(['plugins', 'source', 'plugin_id']);
+    return $this->getSourcePluginManager()->getPlugin($plugin_id);
   }
 
   /**
    * Get the text extractor plugin for the given file mimetype.
    *
-   * @param string $mimetype
-   *   File mimetype.
-   *
    * @return \Drupal\ocha_ai_chat\Plugin\TextExtractorPluginInterface
    *   Text extractor plugin.
    */
-  protected function getTextExtractorPlugin(string $mimetype): TextExtractorPluginInterface {
-    $plugin_ids = $this->getSetting('text_extractor_plugin_ids', ['application/pdf' => 'mupdf']);
-    $plugin_id = $plugin_ids[$mimetype] ?? '';
-    return $this->textExtractorPluginManager->getPlugin($plugin_id);
+  public function getTextExtractorPlugin(string $mimetype): TextExtractorPluginInterface {
+    $plugin_id = $this->getSetting([
+      'plugins',
+      'text_extractor',
+      $mimetype,
+      'plugin_id',
+    ]);
+    return $this->getTextExtractorPluginManager()->getPlugin($plugin_id);
   }
 
   /**
@@ -501,9 +860,9 @@ class OchaAiChat {
    * @return \Drupal\ocha_ai_chat\Plugin\TextSplitterPluginInterface
    *   Text splitter plugin.
    */
-  protected function getTextSplitterPlugin(): TextSplitterPluginInterface {
-    $plugin_id = $this->getSetting('text_splitter_plugin_id', 'sentence');
-    return $this->textSplitterPluginManager->getPlugin($plugin_id);
+  public function getTextSplitterPlugin(): TextSplitterPluginInterface {
+    $plugin_id = $this->getSetting(['plugins', 'text_splitter', 'plugin_id']);
+    return $this->getTextSplitterPluginManager()->getPlugin($plugin_id);
   }
 
   /**
@@ -512,37 +871,24 @@ class OchaAiChat {
    * @return \Drupal\ocha_ai_chat\Plugin\VectorStorePluginInterface
    *   Vector store plugin.
    */
-  protected function getVectorStorePlugin(): VectorStorePluginInterface {
-    $plugin_id = $this->getSetting('vector_store_plugin_id', 'elasticsearch');
-    return $this->vectorStorePluginManager->getPlugin($plugin_id);
+  public function getVectorStorePlugin(): VectorStorePluginInterface {
+    $plugin_id = $this->getSetting(['plugins', 'vector_store', 'plugin_id']);
+    return $this->getVectorStorePluginManager()->getPlugin($plugin_id);
   }
 
   /**
-   * Split a text into passages.
-   *
-   * @param string $text
-   *   Text to split.
-   *
-   * @return array
-   *   List of text passages.
-   */
-  protected function splitText(string $text): array {
-    // @todo retrieve the plugin settings from the config.
-    $length = 2;
-    $overlap = 1;
-
-    return $this->getTextSplitterPlugin()->splitText($text, $length, $overlap);
-  }
-
-  /**
-   * Get the settings for the OCHA AI Chat.
+   * Get the default settings for the OCHA AI Chat.
    *
    * @return array
    *   The OCHA AI Chat settings.
    */
-  protected function getSettings(): array {
+  public function getSettings(): array {
     if (!isset($this->settings)) {
-      $this->settings = $this->state->get('ocha_ai_chat.settings', []);
+      $config_defaults = $this->config->get('defaults') ?? [];
+
+      $state_defaults = $this->state->get('ocha_ai_chat.default_settings', []);
+
+      $this->settings = array_replace_recursive($config_defaults, $state_defaults);
     }
     return $this->settings;
   }
@@ -550,17 +896,29 @@ class OchaAiChat {
   /**
    * Get a setting for the OCHA AI Chat.
    *
-   * @param string $name
-   *   Setting name.
+   * @param array $keys
+   *   Setting keys.
    * @param mixed $default
    *   Default.
+   * @param bool $throw_if_null
+   *   If TRUE and both the setting and default are NULL then an exception
+   *   is thrown. Use this for example for mandatory settings.
    *
    * @return mixed
-   *   Setting value.
+   *   The setting value for the keys or the provided default.
+   *
+   * @throws \Exception
+   *   Throws an exception if no setting could be found (= NULL).
    */
-  protected function getSetting(string $name, mixed $default = NULL): mixed {
+  protected function getSetting(array $keys, mixed $default = NULL, bool $throw_if_null = TRUE): mixed {
     $settings = $this->getSettings();
-    return $settings[$name] ?? $default;
+    $setting = NestedArray::getValue($settings, $keys) ?? $default;
+    if (is_null($setting) && $throw_if_null) {
+      throw new \Exception(strtr('Missing setting @keys', [
+        '@keys' => implode('.', $keys),
+      ]));
+    }
+    return $setting;
   }
 
 }

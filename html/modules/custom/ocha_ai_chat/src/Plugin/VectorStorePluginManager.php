@@ -30,4 +30,11 @@ class VectorStorePluginManager extends PluginManagerBase implements VectorStoreP
     $this->alterInfo('ocha_ai_chat_vector_store_info');
   }
 
+  /**
+   * {@inheritdoc}
+   */
+  public function getPluginType(): string {
+    return 'vector_store';
+  }
+
 }

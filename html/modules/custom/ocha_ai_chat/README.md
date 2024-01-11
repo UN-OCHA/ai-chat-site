@@ -23,12 +23,9 @@ TODO
 
 **Plugins**
 
-- [ ] Add amazon bedrock completion and embedding plugins.
-- [ ] Emulate relevant endpoints in the completion and embedding services.
-- [ ] Make the plugins configurable.
-- [ ] Create a plugin type for the source documents. One plugin would be to
-      get documents from ReliefWeb but other plugins could be used to retrieve
-      information from elsewhere?
+- [ ] Role ARN to access AWS bedrock?
+- [ ] OpenSearch vector store plugin.
+- [ ] Cache RW search conversion separately.
 
 **Improve answer**
 
@@ -42,3 +39,9 @@ TODO
 - [ ] Refine prompt, maybe separate each extract with some prefix like "Fact:"
       so that the AI understands they are separate pieces of information.
 - [ ] Generate list of references at the end of the answer.
+
+**Logging**
+
+- [ ] Log questions, passages and answers.
+- [ ] Log requests (debug mode --> add setting to plugins).
+- [ ] Log number of pages, passages and estimated count of tokens.

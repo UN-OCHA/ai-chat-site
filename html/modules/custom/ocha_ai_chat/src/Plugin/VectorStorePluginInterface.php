@@ -16,12 +16,12 @@ interface VectorStorePluginInterface {
    * @param string $index
    *   Index name.
    * @param int $dimensions
-   *   Dimensions of the embeddings, defaults to 384.
+   *   Dimensions of the embeddings.
    *
    * @return bool
    *   TRUE if the index exists or was created.
    */
-  public function createIndex(string $index, int $dimensions = 384): bool;
+  public function createIndex(string $index, int $dimensions): bool;
 
   /**
    * Delete an index.
@@ -54,11 +54,13 @@ interface VectorStorePluginInterface {
    *   Document to index with properties like id, tile, url and a contents
    *   property containing pages with passages. Each passage contains a text
    *   its embedding.
+   * @param int $dimensions
+   *   Dimensions of the embeddings.
    *
    * @return bool
    *   TRUE if the indexing was successful.
    */
-  public function indexDocuments(string $index, array $documents): bool;
+  public function indexDocuments(string $index, array $documents, int $dimensions): bool;
 
   /**
    * Get the indexed documents for the given ids.
@@ -86,10 +88,12 @@ interface VectorStorePluginInterface {
    *   Text of the query.
    * @param array $query_embedding
    *   Embedding for the text query.
+   * @param int $limit
+   *   Maximum number of relevant passages to return.
    *
    * @return array
    *   List of documents and their text passages relevant to the query.
    */
-  public function getRelevantPassages(string $index, array $ids, string $query_text, array $query_embedding): array;
+  public function getRelevantPassages(string $index, array $ids, string $query_text, array $query_embedding, int $limit = 5): array;
 
 }

@@ -30,4 +30,11 @@ class CompletionPluginManager extends PluginManagerBase implements CompletionPlu
     $this->alterInfo('ocha_ai_chat_completion_info');
   }
 
+  /**
+   * {@inheritdoc}
+   */
+  public function getPluginType(): string {
+    return 'completion';
+  }
+
 }

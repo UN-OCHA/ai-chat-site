@@ -8,6 +8,14 @@ namespace Drupal\ocha_ai_chat\Plugin;
 interface PluginManagerInterface {
 
   /**
+   * Get the plugin type managed by this manager.
+   *
+   * @return string
+   *   Plugin type.
+   */
+  public function getPluginType(): string;
+
+  /**
    * Get the available completion plugins.
    *
    * @return \Drupal\ocha_ai_chat\Plugin\PluginInterface[]

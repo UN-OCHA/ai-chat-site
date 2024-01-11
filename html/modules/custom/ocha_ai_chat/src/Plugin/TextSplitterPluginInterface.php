@@ -12,18 +12,15 @@ interface TextSplitterPluginInterface {
    *
    * @param string $text
    *   Text to split.
-   * @param int $length
-   *   Length of a group of texts (ex: number of characters or sentences).
-   * @param int $overlap
-   *   Number of previous elements (ex: characters, sentences) to include in the
-   *   groups of sentences to try to preserve meaningful context.
+   * @param int|null $length
+   *   Length of the chunks (ex: character length, number of tokens etc.).
+   * @param int|null $overlap
+   *   Number of characters, tokens etc. from the previous chunk to include in
+   *   the current chunk of text to preserve context.
    *
    * @return array
    *   List of text chunks
-   *
-   * @todo handle length differently, to limit the number of characters to have
-   * more consistent output.
    */
-  public function splitText(string $text, int $length, int $overlap): array;
+  public function splitText(string $text, ?int $length = NULL, ?int $overlap = NULL): array;
 
 }

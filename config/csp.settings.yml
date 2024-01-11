@@ -9,6 +9,8 @@ report-only:
         - www.google-analytics.com
         - '*.analytics.google.com'
         - gov-bam.nr-data.net
+        - api.reliefweb.int
+        - reliefweb.int
     font-src:
       base: self
       sources:
@@ -53,6 +55,8 @@ report-only:
       base: self
       flags:
         - unsafe-inline
+      sources:
+        - fonts.googleapis.com
     style-src-attr:
       base: self
       flags:
