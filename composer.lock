@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "0440cfb5dc3e0367bf42a60bd868dbde",
+    "content-hash": "df73ec5a623254f1106fbfad7bd07b97",
     "packages": [
         {
             "name": "asm89/stack-cors",
@@ -3708,7 +3708,7 @@
                 "shasum": "fc8ea60619b6b4682bade340e13fb4565d3a7e0c"
             },
             "require": {
-                "drupal/core": "^9.1 || ^10"
+                "drupal/core": "^10"
             },
             "type": "drupal-module",
             "extra": {
@@ -14484,6 +14484,63 @@
                 "source": "https://github.com/UN-OCHA/common_design/tree/v9.3.0"
             },
             "time": "2024-01-04T12:36:24+00:00"
+        },
+        {
+            "name": "unocha/ocha_ai_chat",
+            "version": "v0.0.2",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/UN-OCHA/ocha_ai_chat.git",
+                "reference": "9413db9aa5e917a4efa9d67954c0034106b6ad19"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/UN-OCHA/ocha_ai_chat/zipball/9413db9aa5e917a4efa9d67954c0034106b6ad19",
+                "reference": "9413db9aa5e917a4efa9d67954c0034106b6ad19",
+                "shasum": ""
+            },
+            "require": {
+                "aws/aws-sdk-php": "^3.283",
+                "drupal/core": "^10",
+                "openai-php/client": "^0.7",
+                "pear/text_languagedetect": "^1.0",
+                "php": ">=8.2",
+                "reliefweb/simple-autocomplete": "^v1.3",
+                "reliefweb/simple-datepicker": "^v1.3",
+                "symfony/uid": "^6.3"
+            },
+            "require-dev": {
+                "dealerdirect/phpcodesniffer-composer-installer": "^1.0",
+                "drupal/coder": "^8.3",
+                "phpcompatibility/php-compatibility": "^9.3"
+            },
+            "type": "drupal-module",
+            "scripts": {
+                "phpcs": [
+                    "vendor/bin/phpcs -p ."
+                ],
+                "phpcbf": [
+                    "vendor/bin/phpcbf -p ."
+                ],
+                "test": [
+                    "@phpcs"
+                ]
+            },
+            "license": [
+                "GPL-2.0-or-later"
+            ],
+            "authors": [
+                {
+                    "name": "UNOCHA",
+                    "role": ""
+                }
+            ],
+            "description": "OCHA AI Chat module",
+            "support": {
+                "source": "https://github.com/UN-OCHA/ocha_ai_chat/tree/v0.0.2",
+                "issues": "https://github.com/UN-OCHA/ocha_ai_chat/issues"
+            },
+            "time": "2024-01-17T02:05:47+00:00"
         },
         {
             "name": "webflo/drupal-finder",

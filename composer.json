@@ -17,6 +17,10 @@
         {
             "type": "composer",
             "url": "https://asset-packagist.org"
+        },
+        {
+            "type": "vcs",
+            "url": "https://github.com/UN-OCHA/ocha_ai_chat.git"
         }
     ],
     "require": {
@@ -61,7 +65,8 @@
         "reliefweb/simple-autocomplete": "^1.3",
         "reliefweb/simple-datepicker": "^1.3",
         "symfony/uid": "^6.3",
-        "unocha/common_design": "^9.1"
+        "unocha/common_design": "^9.1",
+        "unocha/ocha_ai_chat": "^0.0"
     },
     "require-dev": {
         "drupal/coder": "^8.3",
