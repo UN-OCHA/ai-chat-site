@@ -43,6 +43,7 @@ plugins:
       max_tokens: 4096
   source:
     reliefweb:
+      base_index_name: ocha_ai_chat
       api_url: 'https://api.reliefweb.int/v1'
       converter_url: 'https://reliefweb.int/search/converter/json'
       appname: ocha-ai-chat
